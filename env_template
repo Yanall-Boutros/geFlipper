@@ -1,0 +1,5 @@
+# MariaDB Connection Credentials
+DB_HOST=localhost
+DB_USER=root
+DB_PASS=PASSWD
+DB_NAME=geFlipper # or whatever you named your mariadb database
