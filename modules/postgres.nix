@@ -29,7 +29,7 @@
           POSTGRES_USER = "root";
           POSTGRES_DB = "geflipper";
         };
-        environmentFiles = [ /var/src/secrets/postgres.env ]; 
+        environmentFiles = [ "/var/src/secrets/postgres.env" ]; 
         volumes = [ "postgres_data:/var/lib/postgresql/data" ];
         extraOptions = [ "--network=fastapi-network" ];
       };

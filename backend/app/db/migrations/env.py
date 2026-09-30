@@ -1,6 +1,6 @@
 import asyncio
 from logging.config import fileConfig
-from core.config import Settings
+from app.core.config import settings
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
@@ -20,10 +20,11 @@ if config.config_file_name is not None:
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-from db.base import Base  # noqa
+from app.db.base import Base  # noqa
+import app.models  # noqa: registers models on Base.metadata
 
-if Settings.DATABASE_URL:
-    escaped_url = str(Settings.DATABASE_URL).replace("%", "%%")
+if settings.DATABASE_URL:
+    escaped_url = str(settings.DATABASE_URL).replace("%", "%%")
     config.set_main_option("sqlalchemy.url", escaped_url)
 
 # Interpret the config file for Python logging

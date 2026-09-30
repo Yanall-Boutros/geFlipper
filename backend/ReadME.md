@@ -1,0 +1,184 @@
+# geFlipper backend
+
+An async FastAPI service backed by PostgreSQL through SQLAlchemy 2.x and
+`asyncpg`. Alembic manages the database schema.
+
+For deployment and the overall project, see the [root README](../README.md).
+
+## Layout
+
+```
+backend/
+└── app/                      # the `app` package; run commands from backend/
+    ├── main.py               # FastAPI app; mounts the v1 router at /api/v1
+    ├── alembic.ini           # Alembic config (connection URL comes from core/config.py)
+    ├── api/
+    │   ├── deps.py           # get_db(): per-request AsyncSession dependency
+    │   └── v1/router.py      # v1 routes (currently GET /health)
+    ├── core/
+    │   ├── config.py         # settings loaded from DB_* environment variables
+    │   └── security.py       # placeholder
+    ├── db/
+    │   ├── base.py           # declarative Base shared by every model
+    │   ├── database.py       # async engine + SessionLocal
+    │   ├── utils/handler.py  # BaseHandler: async create/read/update/delete
+    │   └── migrations/       # Alembic env.py, template and versions/
+    ├── models/               # SQLAlchemy models (registered in models/__init__.py)
+    ├── schemas/              # Pydantic v2 schemas
+    └── services/             # external API clients (rswiki/)
+```
+
+All imports use the `app.` prefix (for example `from app.db.base import Base`),
+so run the server and scripts from `backend/`.
+
+## Running locally
+
+From the repo root:
+
+```sh
+nix-shell                          # Python + fastapi, uvicorn, sqlalchemy, asyncpg, alembic
+export DB_PASS=<password>          # plus DB_HOST/DB_USER/... if not using the defaults
+cd backend
+uvicorn app.main:app --reload
+```
+
+The root README's [Quick start](../README.md#quick-start-local-development)
+shows how to start a local Postgres container.
+
+## Database access
+
+Routes get a session from the `get_db` dependency. It opens one
+`AsyncSession` per request and closes it afterwards:
+
+```python
+from fastapi import Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_db
+from app.db.utils.handler import BaseHandler
+from app.models import PriceDataModel
+
+@api_router.get("/items/{item_id}")
+async def get_item(item_id: int, db: AsyncSession = Depends(get_db)):
+    return await BaseHandler(db).read(PriceDataModel, item_id)
+```
+
+Every `BaseHandler` method is async and must be awaited. Validate incoming
+data with a Pydantic schema before handing it to the handler. The schemas set
+`from_attributes=True`, so they can also be built directly from model
+instances.
+
+## Migrations
+
+Alembic lives in `app/db/migrations/`. `env.py` gets the connection URL from
+`app.core.config.settings` and the table definitions from `Base.metadata`, so
+the `DB_*` variables must be set for any command that touches the database.
+
+Run Alembic from `backend/app/`, or from anywhere with `-c`:
+
+```sh
+cd backend/app
+alembic upgrade head          # apply all pending migrations
+alembic downgrade -1          # roll back the most recent migration
+alembic current               # show which revision the database is at
+alembic history               # list all revisions
+alembic check                 # fail if the models and the database have drifted
+alembic upgrade head --sql    # print the SQL without connecting (review before applying)
+```
+
+### Changing the schema
+
+1. Add or edit a model in `app/models/`.
+2. **New model:** import it in `app/models/__init__.py`. Autogenerate only sees
+   models that are imported there.
+3. Generate a migration:
+   ```sh
+   alembic revision --autogenerate -m "add price history table"
+   ```
+4. Read the new file in `app/db/migrations/versions/`. Autogenerate misses some
+   changes, such as renames (which it treats as a drop plus an add) and some
+   type or constraint changes. Fix those by hand.
+5. Apply it with `alembic upgrade head`, and commit the model and the migration
+   together.
+
+### Running migrations in production
+
+The backend image doesn't include Alembic, and the container doesn't migrate on
+startup. For now, run migrations from a machine with the dev shell, pointed at
+the production database (Postgres is published on port 5432 of the host):
+
+```sh
+nix-shell
+export DB_HOST=<server> DB_PASS=<password>
+cd backend/app && alembic upgrade head
+```
+
+Migrate before restarting the backend with code that depends on the new
+schema. A planned improvement is to add `alembic` to the image and run
+`alembic upgrade head` before `uvicorn` starts.
+
+## Background data collection (planned)
+
+> **Not implemented yet.** This section describes the intended design so new
+> collectors follow the same pattern.
+
+Data collection runs inside the FastAPI process as long-lived asyncio tasks.
+They start when the app starts and are cancelled when it shuts down, using
+FastAPI's `lifespan` hook. FastAPI's `BackgroundTasks` isn't suitable, because
+it only runs work after a single request finishes, not on a schedule.
+
+### Planned collectors
+
+| Collector | Source | Interval | Target |
+| --- | --- | --- | --- |
+| Item catalogue | Weird Gloop `os_dump.json` (`services/rswiki/priceData.py`) | daily | `price_data` |
+| Latest prices | Wiki `/latest` | ~1 min | *latest prices table (TBD)* |
+| 5-minute averages | Wiki `/5m` | 5 min | *5m history table (TBD)* |
+| Hourly averages | Wiki `/1h` | 1 h | *1h history table (TBD)* |
+| History backfill | Wiki `/timeseries` | on demand | *history table (TBD)* |
+
+The wiki endpoints are under `https://prices.runescape.wiki/api/v1/osrs`. The
+wiki requires a descriptive `User-Agent` header and asks clients to stay under
+its rate limits. The legacy `sync_tables.py` in the repo root shows the payload
+shapes.
+
+### Sketch
+
+```python
+# app/services/collectors/base.py  (pseudo-code)
+import asyncio, logging
+
+async def run_periodically(name: str, interval_s: int, job):
+    """Run `job` every `interval_s` seconds until cancelled; never crash the app."""
+    while True:
+        try:
+            async with SessionLocal() as db:
+                await job(db)
+        except Exception:
+            logging.exception("collector %s failed", name)
+        await asyncio.sleep(interval_s)
+
+
+# app/main.py  (pseudo-code)
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    tasks = [
+        asyncio.create_task(run_periodically("latest", 60, collect_latest)),
+        asyncio.create_task(run_periodically("5m", 300, collect_5m)),
+        asyncio.create_task(run_periodically("catalogue", 86_400, collect_catalogue)),
+    ]
+    yield
+    for t in tasks:
+        t.cancel()
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+app = FastAPI(title="geFlipper", lifespan=lifespan)
+```
+
+Guidelines for collectors:
+
+- **Don't block the event loop.** Use an async HTTP client such as `httpx.AsyncClient`, or wrap the existing `requests` calls in `asyncio.to_thread`.
+- **Make writes idempotent.** Use Postgres upserts (`sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_update(...)`) so re-running a collection doesn't create duplicates.
+- **Run a single worker.** Each uvicorn worker would start its own copy of the collectors. Before scaling to multiple workers, move collection into its own process or add a lock.

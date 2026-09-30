@@ -20,11 +20,14 @@
           (pkgs.python311.withPackages (ps: with ps; [
             fastapi
             uvicorn
-            psycopg2
+            sqlalchemy
+            asyncpg
+            pydantic
+            requests
           ]))
         ];
         config = {
-          Cmd = [ "uvicorn" "main:app" "--host" "0.0.0.0" "--port" "8000" "--app-dir" "/app" ];
+          Cmd = [ "uvicorn" "app.main:app" "--host" "0.0.0.0" "--port" "8000" "--app-dir" "/app" ];
           ExposedPorts = { "8000/tcp" = {}; };
           WorkingDir = "/app";
         };

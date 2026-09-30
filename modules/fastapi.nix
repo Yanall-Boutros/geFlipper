@@ -25,9 +25,13 @@
         ports = [ "8000:8000" ];
         volumes = [ "/var/src/my-services/backend:/app" ];
         environment = {
-          DATABASE_URL = "postgresql://fastapi_user@postgres-db:5432/microservice_db";
+          # DB_PASS must be provided via the environment file below
+          DB_HOST = "postgres-db";
+          DB_PORT = "5432";
+          DB_USER = "root";
+          DB_NAME = "geflipper";
         };
-        environmentFiles = [ /var/src/secrets/fastapi.env ];
+        environmentFiles = [ "/var/src/secrets/fastapi.env" ];
         extraOptions = [ "--network=fastapi-network" ];
       };
     };

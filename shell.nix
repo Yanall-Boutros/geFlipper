@@ -8,6 +8,8 @@ pkgs.mkShell {
     python3Packages.sqlalchemy
 	  python3Packages.asyncpg
     python3Packages.alembic
+    python3Packages.fastapi
+    python3Packages.uvicorn
   ];
   shellHook = ''
     export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath [ pkgs.stdenv.cc.cc.lib ]}:$LD_LIBRARY_PATH"

@@ -1,6 +1,5 @@
 from sqlalchemy import Column, Integer, String, Boolean
-from sqlalchemy.ext.declarative import declarative_base
-from db.base import Base
+from app.db.base import Base
 
 class PriceDataModel(Base):
     __tablename__ = 'price_data'

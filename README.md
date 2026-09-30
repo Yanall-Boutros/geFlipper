@@ -1,62 +1,151 @@
-Thoroughly work in progress
+# geFlipper
 
-insert your auth parameters into `env_template` for connecting to mariadb. Run init_database.py
-to create and populate the initial database and tables.
+A tool for finding profitable flips on the Old School RuneScape Grand Exchange.
+geFlipper collects item prices and trade volumes from the RuneScape Wiki APIs,
+stores them in Postgres, and will run trading indicators over that history to
+decide what to buy, when to sell, and how long to hold.
 
-Will add a systemd unit file soon to automate synchronizing the database with outputs from 
-`/latest` api endpoint.
+> **Status:** early work in progress. The database layer, migrations and a bare
+> FastAPI app are in place. Data collection and the indicators are not built yet.
 
-To do:
-* Add indicators for all tracked items
-* Infer how long to hold what volume of items, as well as when to buy and sell that volume
+## How it fits together
 
-AI Slop recommended indicators:
+```
+RuneScape Wiki / Weird Gloop APIs
+            │
+            ▼
+  FastAPI service (backend/)            ◄── HTTP API under /api/v1
+    ├─ background collectors (planned)
+    ├─ SQLAlchemy async models
+    └─ Alembic migrations
+            │
+            ▼
+       PostgreSQL 16
+```
 
-1. Volume Profile (VPVR) & Volume-at-Price — Highest ReliabilityWhy it works
-in OSRS: GE order books are dark (you can't see pending offers), but VPVR reveals
-where players are heavily buying and selling. High Volume Nodes (HVNs) show
-"fair market value" consolidation zones, while Low Volume Nodes (LVNs) act as
-rapid gap areas.  Buy/Sell Signal: Buy at the bottom of an HVN or near the
-Value Area Low (VAL). Sell at the top edge of the HVN or near the Value Area
-High (VAH).
+Both services run as Docker containers on NixOS, defined by the Nix flake in
+this repo.
 
-2. Moving Average Envelopes / Exponential Moving Average (EMA)Why
-it works in OSRS: High-volume items (Zulrah scales, Cannonballs, Runes, Chinchompas
-) strictly mean-revert around an intraday short-term average (5-EMA or 10-
-EMA).Buy/Sell Signal: Buy when price dips below the lower envelope boundary
-; sell when it pierces the upper envelope boundary back toward the EMA centerline.
+## Repository layout
 
-3. Relative Strength Index (RSI) / Stochastic OscillatorWhy it works in OSRS:
-High-tier gear (Scythe, Tumeken's Shadow, Torva) frequently gets overbought
-during boss release announcements and oversold during post-update panic dumps.
-Buy/Sell Signal: On 5m to 1h charts, an RSI below 25 coupled with a volume
-spike signals panic selling (instant-buy opportunity). An RSI above 75 signals
-FOMO buying (instant-sell/dump opportunity).
+| Path | What it is |
+| --- | --- |
+| `backend/` | The FastAPI service. See [`backend/ReadME.md`](backend/ReadME.md) for development, migrations and background tasks. |
+| `flake.nix` | Builds the backend Docker image and exports the NixOS modules. |
+| `modules/postgres.nix` | NixOS module that runs the Postgres container. |
+| `modules/fastapi.nix` | NixOS module that loads the backend image and runs it. |
+| `shell.nix` | Development shell with Python and every backend dependency. |
+| `docs/indicators.md` | Notes on the trading indicators planned for flipping. |
+| `init_database.py`, `sync_tables.py`, `env_template` | The original MariaDB scripts. No longer used; kept for reference only (see [Legacy scripts](#legacy-scripts)). |
 
-4. Volume Weighted Average Price
-(VWAP)Why it works in OSRS: Gives an accurate benchmark of the true average
-fill price accounting for trade size.  Buy/Sell Signal: If current instant
--buy price is significantly below VWAP, the item is heavily discounted.
+## Quick start (local development)
 
-Top 2 Indicator Combinations & Timeframe Setup
+You need [Nix](https://nixos.org/download) and Docker.
 
-Combination A: High-Volume / Daily
-Consumables FlippingTarget Items: Death runes, Rev ether, Cannonballs, Zulrah
-scales, PVM supplies.Combination: VPVR + 5/20 EMA Envelopes + VolumeOptimal
-Timeframe: 5-Minute to 15-Minute Charts (Instant/Day Flipping)Strategy Execution
-:Buy Price: Place a slow-buy limit offer at the lower boundary of the 5-EMA
-Envelope near a High-Volume Node (HVN) on the VPVR.Volume Check: Ensure 5-
-minute volume is stable (avoid items experiencing an unnatural volume collapse
-).Sell Price: Place a slow-sell limit offer just below the upper boundary of
-the Envelope / VPVR High.Margin Calculation: Ensure (Sell Price * 0.99) - Buy
-Price > 0 (accounting for the 1% GE tax).
+```sh
+# 1. Start a throwaway Postgres
+docker run -d --name geflipper-db -p 5432:5432 \
+  -e POSTGRES_USER=root -e POSTGRES_PASSWORD=devpass -e POSTGRES_DB=geflipper \
+  postgres:16-alpine
 
-Combination B: High-Value Gear & Update
-Speculation (Investment Merching)Target Items: PvM weapons/armour (Scythe of
-Vitur, Masori, Osmumten's Fang, Elder Mauls).  Combination: 200 EMA + RSI (
-14) + Volume Profile (VPVR)Optimal Timeframe: 1-Hour to 4-Hour / Daily Charts
-(Hold duration: 1 to 7 days)Strategy Execution:Buy Price: Wait for a panic
-sell-off where price touches a major VPVR Support Node and 1-hour RSI drops
-below 30.Volume Check: Look for a massive single 1-hour volume bar (indicating
-liquidation/absorption by merchers).Sell Price: Target exit at the next upper
-VPVR Resistance level or when 4-hour RSI crosses above 70.
+# 2. Enter the dev shell and point the backend at the database
+nix-shell
+export DB_PASS=devpass
+
+# 3. Create the tables
+cd backend/app && alembic upgrade head && cd ..
+
+# 4. Run the API (from backend/)
+uvicorn app.main:app --reload
+```
+
+Check that it's running at <http://localhost:8000/api/v1/health>. The
+interactive API docs are at <http://localhost:8000/docs>.
+
+## Configuration
+
+The backend reads its database settings from environment variables
+(`backend/app/core/config.py`). Never put credentials in the code.
+
+| Variable | Default | Notes |
+| --- | --- | --- |
+| `DB_USER` | `root` | |
+| `DB_PASS` | *(empty)* | Required. |
+| `DB_HOST` | `localhost` | `postgres-db` inside the deployed container network. |
+| `DB_PORT` | `5432` | |
+| `DB_NAME` | `geflipper` | |
+
+## Deployment (NixOS)
+
+The flake exports two NixOS modules and one package:
+
+| Output | Purpose |
+| --- | --- |
+| `nixosModules.postgres` | Runs `postgres:16-alpine` as `postgres-db` on the `fastapi-network` Docker network, storing data in the `postgres_data` volume. |
+| `nixosModules.fastapi` | Loads the Nix-built image into Docker at boot and runs it as `fastapi-backend` on port 8000. |
+| `packages.x86_64-linux.backend-image` | The backend image on its own (`nix build .#backend-image`). |
+
+### 1. Add the flake to your system configuration
+
+```nix
+{
+  inputs.geflipper.url = "github:<owner>/geFlipper";
+
+  outputs = { nixpkgs, geflipper, ... }: {
+    nixosConfigurations.<host> = nixpkgs.lib.nixosSystem {
+      system = "x86_64-linux";
+      modules = [
+        geflipper.nixosModules.postgres
+        geflipper.nixosModules.fastapi
+        { virtualisation.docker.enable = true; }   # the modules don't enable Docker themselves
+        # ...your other modules
+      ];
+    };
+  };
+}
+```
+
+### 2. Prepare the server
+
+The modules expect these paths on the host:
+
+| Path | Contents |
+| --- | --- |
+| `/var/src/secrets/postgres.env` | `POSTGRES_PASSWORD=<password>` |
+| `/var/src/secrets/fastapi.env` | `DB_PASS=<same password>` |
+| `/var/src/my-services/backend` | A copy of this repo's `backend/` directory. It is mounted into the container at `/app`. |
+
+The image contains only Python and the dependencies. The application code
+comes from the mounted directory, so deploying a code change means updating
+`/var/src/my-services/backend` and restarting the container:
+
+```sh
+rsync -a --delete backend/ <host>:/var/src/my-services/backend/
+ssh <host> systemctl restart docker-fastapi-backend
+```
+
+### 3. Rebuild and migrate
+
+```sh
+nixos-rebuild switch --flake .#<host>
+```
+
+Then apply the database migrations (see
+[Running migrations in production](backend/ReadME.md#running-migrations-in-production)).
+The container doesn't run them on startup.
+
+## Legacy scripts
+
+`init_database.py` and `sync_tables.py` are the first version of the project.
+They loaded wiki price data into MariaDB using raw SQL. The FastAPI service
+replaces them, and nothing in the current code uses them. They're kept only as
+a reference for the wiki API endpoints and table layouts, which the planned
+background collectors will reproduce.
+
+## Roadmap
+
+- [ ] Background collectors for the wiki price endpoints
+- [ ] API endpoints for querying items and price history
+- [ ] Indicators for every tracked item (see [`docs/indicators.md`](docs/indicators.md))
+- [ ] Work out how much of an item to buy, how long to hold it, and when to buy and sell
+- [ ] Run migrations automatically on deploy

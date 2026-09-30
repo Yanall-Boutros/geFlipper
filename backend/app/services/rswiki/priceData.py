@@ -51,30 +51,6 @@ class RSWikiPriceData:
         response.raise_for_status()
         return response.json()
 
-    def push_price_data_to_db(self, db_session):
-        """Pushes the fetched price data to the database"""
-        if self.priceData is None:
-            raise ValueError("Price data has not been fetched yet.")
-
-        # Assuming you have a SQLAlchemy model named PriceDataModel
-        for item_id, data in self.priceData.items():
-            price_record = PriceDataModel(
-                id=item_id,
-                name=data.get("name"),
-                examine=data.get("examine"),
-                price=data.get("price"),
-                last=data.get("last"),
-                volume=data.get("volume"),
-                members=data.get("members"),
-                lowalch=data.get("lowalch"),
-                highalch=data.get("highalch"),
-                limit=data.get("limit"),
-                value=data.get("value"),
-                icon=data.get("icon")
-            )
-            db_session.add(price_record)
-        db_session.commit()
-
 
 
 if __name__ == "__main__":
