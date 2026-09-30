@@ -10,4 +10,9 @@ class Settings:
     DB_NAME: str = os.getenv("DB_NAME", "geflipper")
     DATABASE_URL: str = f"postgresql+asyncpg://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
+    # The RuneScape Wiki APIs require a descriptive User-Agent
+    USER_AGENT: str = os.getenv("USER_AGENT", "geFlipper - OSRS item price tracker ")
+    # Set to "0" to run the API without the background collectors
+    ENABLE_COLLECTORS: bool = os.getenv("ENABLE_COLLECTORS", "1") != "0"
+
 settings = Settings()

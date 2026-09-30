@@ -6,7 +6,8 @@ stores them in Postgres, and will run trading indicators over that history to
 decide what to buy, when to sell, and how long to hold.
 
 > **Status:** early work in progress. The database layer, migrations and a bare
-> FastAPI app are in place. Data collection and the indicators are not built yet.
+> FastAPI app are in place, with the first background collector (the item
+> catalogue). The remaining collectors and the indicators are not built yet.
 
 ## How it fits together
 
@@ -15,7 +16,7 @@ RuneScape Wiki / Weird Gloop APIs
             │
             ▼
   FastAPI service (backend/)            ◄── HTTP API under /api/v1
-    ├─ background collectors (planned)
+    ├─ background collectors
     ├─ SQLAlchemy async models
     └─ Alembic migrations
             │

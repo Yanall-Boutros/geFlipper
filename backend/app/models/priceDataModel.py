@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean
+from sqlalchemy import BigInteger, Column, Integer, String, Boolean
 from app.db.base import Base
 
 class PriceDataModel(Base):
@@ -7,9 +7,10 @@ class PriceDataModel(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
     examine = Column(String)
-    price = Column(Integer)
-    last = Column(Integer)
-    volume = Column(Integer)
+    # BigInteger: the most expensive items trade above the 32-bit limit (~2.1b)
+    price = Column(BigInteger)
+    last = Column(BigInteger)
+    volume = Column(BigInteger)
     members = Column(Boolean)
     lowalch = Column(Integer)
     highalch = Column(Integer)

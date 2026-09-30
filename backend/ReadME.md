@@ -10,13 +10,14 @@ For deployment and the overall project, see the [root README](../README.md).
 ```
 backend/
 └── app/                      # the `app` package; run commands from backend/
-    ├── main.py               # FastAPI app; mounts the v1 router at /api/v1
+    ├── main.py               # FastAPI app; mounts /api/v1, starts background tasks
     ├── alembic.ini           # Alembic config (connection URL comes from core/config.py)
     ├── api/
     │   ├── deps.py           # get_db(): per-request AsyncSession dependency
     │   └── v1/router.py      # v1 routes (currently GET /health)
     ├── core/
-    │   ├── config.py         # settings loaded from DB_* environment variables
+    │   ├── config.py         # settings loaded from environment variables
+    │   ├── lifecycle.py      # LifecycleTask: base for app-lifetime background tasks
     │   └── security.py       # placeholder
     ├── db/
     │   ├── base.py           # declarative Base shared by every model
@@ -25,7 +26,7 @@ backend/
     │   └── migrations/       # Alembic env.py, template and versions/
     ├── models/               # SQLAlchemy models (registered in models/__init__.py)
     ├── schemas/              # Pydantic v2 schemas
-    └── services/             # external API clients (rswiki/)
+    └── services/             # collectors/ (BaseCollector) and API clients (rswiki/)
 ```
 
 All imports use the `app.` prefix (for example `from app.db.base import Base`),
@@ -117,65 +118,52 @@ Migrate before restarting the backend with code that depends on the new
 schema. A planned improvement is to add `alembic` to the image and run
 `alembic upgrade head` before `uvicorn` starts.
 
-## Background data collection (planned)
-
-> **Not implemented yet.** This section describes the intended design so new
-> collectors follow the same pattern.
+## Background data collection
 
 Data collection runs inside the FastAPI process as long-lived asyncio tasks.
 They start when the app starts and are cancelled when it shuts down, using
-FastAPI's `lifespan` hook. FastAPI's `BackgroundTasks` isn't suitable, because
-it only runs work after a single request finishes, not on a schedule.
+FastAPI's `lifespan` hook in `main.py`. FastAPI's `BackgroundTasks` isn't
+suitable, because it only runs work after a single request finishes, not on a
+schedule. Set `ENABLE_COLLECTORS=0` to run the API without them.
 
-### Planned collectors
+- `core/lifecycle.py`: `LifecycleTask`, the base for anything that runs for the
+  life of the app. Subclasses implement `run()`, and `start()`/`stop()` manage
+  the asyncio task.
+- `services/collectors/base.py`: `BaseCollector(LifecycleTask)`. Subclasses set
+  `name` and `interval` (seconds) and implement `collect(db)`. Each run gets
+  its own `AsyncSession`. A failed run is logged and retried on the next
+  interval; it never takes down the app.
+- `main.py`: `build_tasks()` lists the tasks to start.
+
+### Collectors
 
 | Collector | Source | Interval | Target |
 | --- | --- | --- | --- |
-| Item catalogue | Weird Gloop `os_dump.json` (`services/rswiki/priceData.py`) | daily | `price_data` |
-| Latest prices | Wiki `/latest` | ~1 min | *latest prices table (TBD)* |
-| 5-minute averages | Wiki `/5m` | 5 min | *5m history table (TBD)* |
-| Hourly averages | Wiki `/1h` | 1 h | *1h history table (TBD)* |
-| History backfill | Wiki `/timeseries` | on demand | *history table (TBD)* |
+| Item catalogue (`RSWikiPriceData`) | Weird Gloop `os_dump.json` (`services/rswiki/priceData.py`) | daily | `price_data` |
+| Latest prices *(planned)* | Wiki `/latest` | ~1 min | *latest prices table (TBD)* |
+| 5-minute averages *(planned)* | Wiki `/5m` | 5 min | *5m history table (TBD)* |
+| Hourly averages *(planned)* | Wiki `/1h` | 1 h | *1h history table (TBD)* |
+| History backfill *(planned)* | Wiki `/timeseries` | on demand | *history table (TBD)* |
 
 The wiki endpoints are under `https://prices.runescape.wiki/api/v1/osrs`. The
-wiki requires a descriptive `User-Agent` header and asks clients to stay under
-its rate limits. The legacy `sync_tables.py` in the repo root shows the payload
-shapes.
+wiki requires a descriptive `User-Agent` header (`settings.USER_AGENT`) and asks
+clients to stay under its rate limits. The legacy `sync_tables.py` in the repo
+root shows the payload shapes.
 
-### Sketch
+### Adding a collector
 
 ```python
-# app/services/collectors/base.py  (pseudo-code)
-import asyncio, logging
+class LatestPrices(BaseCollector):
+    name = "rswiki_latest"
+    interval = 60
 
-async def run_periodically(name: str, interval_s: int, job):
-    """Run `job` every `interval_s` seconds until cancelled; never crash the app."""
-    while True:
-        try:
-            async with SessionLocal() as db:
-                await job(db)
-        except Exception:
-            logging.exception("collector %s failed", name)
-        await asyncio.sleep(interval_s)
-
-
-# app/main.py  (pseudo-code)
-from contextlib import asynccontextmanager
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    tasks = [
-        asyncio.create_task(run_periodically("latest", 60, collect_latest)),
-        asyncio.create_task(run_periodically("5m", 300, collect_5m)),
-        asyncio.create_task(run_periodically("catalogue", 86_400, collect_catalogue)),
-    ]
-    yield
-    for t in tasks:
-        t.cancel()
-    await asyncio.gather(*tasks, return_exceptions=True)
-
-app = FastAPI(title="geFlipper", lifespan=lifespan)
+    async def collect(self, db: AsyncSession) -> None:
+        raw = await asyncio.to_thread(self.fetch)   # requests is blocking
+        ...                                         # validate, then upsert
+        await db.commit()
 ```
+
+Then add `LatestPrices()` to `build_tasks()` in `main.py`.
 
 Guidelines for collectors:
 
