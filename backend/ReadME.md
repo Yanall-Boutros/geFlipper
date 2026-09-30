@@ -14,7 +14,9 @@ backend/
     ├── alembic.ini           # Alembic config (connection URL comes from core/config.py)
     ├── api/
     │   ├── deps.py           # get_db(): per-request AsyncSession dependency
-    │   └── v1/router.py      # v1 routes (currently GET /health)
+    │   └── v1/
+    │       ├── router.py     # v1 router: GET /health, includes endpoints/
+    │       └── endpoints/    # one router per resource (priceData.py: GET /price-data)
     ├── core/
     │   ├── config.py         # settings loaded from environment variables
     │   ├── lifecycle.py      # LifecycleTask: base for app-lifetime background tasks
@@ -63,6 +65,18 @@ from app.models import PriceDataModel
 async def get_item(item_id: int, db: AsyncSession = Depends(get_db)):
     return await BaseHandler(db).read(PriceDataModel, item_id)
 ```
+
+`BaseHandler` also has `list(model, offset, limit, order_by)` and
+`count(model)` for paginated endpoints. Wrap the result in
+`app.schemas.pagination.Page`:
+
+```sh
+curl 'localhost:8000/api/v1/price-data?offset=0&limit=100'
+# {"items": [...], "total": 4662, "offset": 0, "limit": 100}
+```
+
+`limit` defaults to 100 and is capped at 1000. Rows are ordered by item id,
+then `jagex_timestamp`.
 
 Every `BaseHandler` method is async and must be awaited. Validate incoming
 data with a Pydantic schema before handing it to the handler. The schemas set
@@ -139,11 +153,24 @@ schedule. Set `ENABLE_COLLECTORS=0` to run the API without them.
 
 | Collector | Source | Interval | Target |
 | --- | --- | --- | --- |
-| Item catalogue (`RSWikiPriceData`) | Weird Gloop `os_dump.json` (`services/rswiki/priceData.py`) | daily | `price_data` |
+| GE prices (`RSWikiPriceData`) | Weird Gloop `os_dump.json` (`services/rswiki/priceData.py`) | polls every 30 min; writes once per Jagex update (~daily) | `price_data` |
 | Latest prices *(planned)* | Wiki `/latest` | ~1 min | *latest prices table (TBD)* |
 | 5-minute averages *(planned)* | Wiki `/5m` | 5 min | *5m history table (TBD)* |
 | Hourly averages *(planned)* | Wiki `/1h` | 1 h | *1h history table (TBD)* |
 | History backfill *(planned)* | Wiki `/timeseries` | on demand | *history table (TBD)* |
+
+`price_data` is append-only, with one row per item per Jagex GE update and
+primary key `(id, jagex_timestamp)`. Each row carries the dump's
+`%JAGEX_TIMESTAMP%` (when Jagex published the prices) as `jagex_timestamp`, and
+`%UPDATE_DETECTED%` (when the wiki noticed the update) as `update_detected`,
+both stored as UTC `timestamptz`. The collector skips a dump whose Jagex
+timestamp isn't newer than the latest one stored, so rows are never
+overwritten. Build time series on `jagex_timestamp`:
+
+```sql
+SELECT jagex_timestamp, price, volume
+FROM price_data WHERE id = 10344 ORDER BY jagex_timestamp;
+```
 
 The wiki endpoints are under `https://prices.runescape.wiki/api/v1/osrs`. The
 wiki requires a descriptive `User-Agent` header (`settings.USER_AGENT`) and asks

@@ -1,5 +1,6 @@
 # Pydantic schema for priceData
 
+from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
@@ -7,6 +8,8 @@ from pydantic import BaseModel, ConfigDict
 # Untraded or untradeable items leave out price/last/volume, alch values and limit
 class PriceDataSchemaBase(BaseModel):
     id: int
+    jagex_timestamp: datetime
+    update_detected: datetime
     name: str
     examine: str
     price: Optional[int] = None

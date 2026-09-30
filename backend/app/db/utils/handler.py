@@ -1,5 +1,6 @@
 # Base Class for each database handler, providing common CRUD operations
 # A pydantic model will be used to validate the data before passing it to the handler
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 class BaseHandler:
@@ -27,3 +28,15 @@ class BaseHandler:
         """Delete a record from the database."""
         await self.db_session.delete(model_instance)
         await self.db_session.commit()
+
+    async def list(self, model_class, offset: int = 0, limit: int = 100, order_by=None):
+        """Read a page of records, ordered by `order_by` (defaults to the primary key)."""
+        if order_by is None:
+            order_by = model_class.__mapper__.primary_key
+        stmt = select(model_class).order_by(*order_by).offset(offset).limit(limit)
+        result = await self.db_session.scalars(stmt)
+        return result.all()
+
+    async def count(self, model_class):
+        """Count every record of a model."""
+        return await self.db_session.scalar(select(func.count()).select_from(model_class))
