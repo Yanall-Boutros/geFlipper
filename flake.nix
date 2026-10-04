@@ -10,12 +10,11 @@
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       
-      # The ultra-lean, optimized OCI image definition
       fastapiImage = pkgs.dockerTools.streamLayeredImage {
         name = "fastapi-backend";
         tag = "latest";
         contents = [
-          pkgs.python311
+          pkgs.python3
           pkgs.cacert
           (pkgs.python311.withPackages (ps: with ps; [
             fastapi

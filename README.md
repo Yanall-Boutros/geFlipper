@@ -50,7 +50,7 @@ docker run -d --name geflipper-db -p 5432:5432 \
   postgres:16-alpine
 
 # 2. Enter the dev shell and point the backend at the database
-nix-shell
+nix-shell ./shell.nix # Alternatively, use direnv. $ echo "use nix" > .envrc && direnv allow
 export DB_PASS=devpass
 
 # 3. Create the tables
