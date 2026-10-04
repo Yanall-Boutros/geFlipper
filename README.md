@@ -96,12 +96,11 @@ flake.nix:
   }
 
 
-  outputs = { nixpkgs, geflipper, ... }: {
+  outputs = { nixpkgs, geflipper, ... }@inputs: {
     nixosConfigurations.<host> = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
-        geflipper.nixosModules.postgres
-        geflipper.nixosModules.fastapi
+      	geflipper.nixosModules.default # imports both fastapi and postgres modules, with default packages / configurations
         # ...your other modules
       ];
     };
@@ -111,6 +110,15 @@ flake.nix:
 configuration.nix:
 ```nix
 virtualisation.docker.enable = true;
+services.geflipper.postgres = {
+	enable = true;
+	environmentFile = "/var/src/secrets/postgres.env";
+};
+services.geflipper.fastapi = {
+	enable = true;
+	environmentFile = "/var/src/secrets/fastapi.env";
+};
+
 ```
 
 ### 2. Prepare the server
@@ -121,35 +129,13 @@ The modules expect these paths on the host:
 | --- | --- |
 | `/var/src/secrets/postgres.env` | `POSTGRES_PASSWORD=<password>` |
 | `/var/src/secrets/fastapi.env` | `DB_PASS=<same password>` |
-| `/var/src/my-services/backend` | A copy of this repo's `backend/` directory. It is mounted into the container at `/app`. |
-
-The image contains only Python and the dependencies. The application code
-comes from the mounted directory, so deploying a code change means updating
-`/var/src/my-services/backend` and restarting the container:
-
-```sh
-rsync -a --delete backend/ <host>:/var/src/my-services/backend/
-ssh <host> systemctl restart docker-fastapi-backend
-```
 
 ### 3. Rebuild and migrate
 
 ```sh
-nixos-rebuild switch --flake .#<host>
+nix flake update
+nixos-rebuild switch
 ```
-
-Then apply the database migrations (see
-[Running migrations in production](backend/ReadME.md#running-migrations-in-production)).
-The container doesn't run them on startup.
-
-## Legacy scripts
-
-`init_database.py` and `sync_tables.py` are the first version of the project.
-They loaded wiki price data into MariaDB using raw SQL. The FastAPI service
-replaces them, and nothing in the current code uses them. They're kept only as
-a reference for the wiki API endpoints and table layouts, which the planned
-background collectors will reproduce.
-
 ## Roadmap
 
 - [ ] Background collectors for the wiki price endpoints
