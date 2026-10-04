@@ -21,6 +21,10 @@ in
     };
   };
   config = lib.mkIf cfg.enable {
+    systemd.services.docker-fastapi-backend = {
+      after = [ "init-fastapi-net.service" "docker-postgres-db.service" ];
+      requires = [ "init-fastapi-net.service" "docker-postgres-db.service" ];
+    };
     virtualisation.oci-containers = {
       backend = "docker";
       containers.fastapi-backend = {
