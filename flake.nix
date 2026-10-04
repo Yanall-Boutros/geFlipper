@@ -20,6 +20,7 @@
           (pkgs.python3.withPackages (ps: with ps; [
             fastapi
             uvicorn
+	    alembic
             sqlalchemy
             asyncpg
             pydantic
@@ -31,7 +32,7 @@
           cp -r ${./backend}/* app/
         '';
         config = {
-          Cmd = [ "uvicorn" "app.main:app" "--host" "0.0.0.0" "--port" "8000" "--app-dir" "/app" ];
+          Cmd = [ "sh" "-c" "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir /app" ];
           ExposedPorts = { "8000/tcp" = {}; };
           WorkingDir = "/app";
         };
