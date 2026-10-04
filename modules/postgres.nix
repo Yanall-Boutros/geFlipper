@@ -27,20 +27,21 @@ in
     		    ExecStop = "${pkgs.docker}/bin/docker network rm fastapi-network";
     		  };
     		};
-	};
-	virtualisation.oci-containers = {
-		backend = "docker";
-		containers = {
-			postgres-db = {
-				image         = "postgres:16-alpine";
-				ports         = [ "5432:5432" ];
-				environment   = {
-					POSTGRES_USER = "root";
-					POSTGRES_DB   = "geflipper";
+
+		virtualisation.oci-containers = {
+			backend = "docker";
+			containers = {
+				postgres-db = {
+					image         = "postgres:16-alpine";
+					ports         = [ "5432:5432" ];
+					environment   = {
+						POSTGRES_USER = "root";
+						POSTGRES_DB   = "geflipper";
+					};
+					environmentFiles = [ "/var/src/secrets/postgres.env" ]; 
+					volumes          = [ "postgres_data:/var/lib/postgresql/data" ];
+					extraOptions     = [ "--network=fastapi-network" ];
 				};
-				environmentFiles = [ "/var/src/secrets/postgres.env" ]; 
-				volumes          = [ "postgres_data:/var/lib/postgresql/data" ];
-				extraOptions     = [ "--network=fastapi-network" ];
 			};
 		};
 	};
