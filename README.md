@@ -5,9 +5,10 @@ geFlipper collects item prices and trade volumes from the RuneScape Wiki APIs,
 stores them in Postgres, and will run trading indicators over that history to
 decide what to buy, when to sell, and how long to hold.
 
-> **Status:** early work in progress. The database layer, migrations and a bare
-> FastAPI app are in place, with the first background collector (the item
-> catalogue). The remaining collectors and the indicators are not built yet.
+> **Status:** early work in progress. The database layer, migrations, unit
+> tests and a FastAPI app are in place. The first background collector records
+> daily GE prices from the Weird Gloop dump, and `GET /api/v1/price-data` serves
+> them. The remaining collectors and the indicators are not built yet.
 
 ## How it fits together
 
@@ -31,11 +32,11 @@ this repo.
 
 | Path | What it is |
 | --- | --- |
-| `backend/` | The FastAPI service. See [`backend/ReadME.md`](backend/ReadME.md) for development, migrations and background tasks. |
+| `backend/` | The FastAPI service and its tests. See [`backend/ReadME.md`](backend/ReadME.md) for development, testing, migrations and background tasks. |
 | `flake.nix` | Builds the backend Docker image and exports the NixOS modules. |
 | `modules/postgres.nix` | NixOS module that runs the Postgres container. |
 | `modules/fastapi.nix` | NixOS module that loads the backend image and runs it. |
-| `shell.nix` | Development shell with Python and every backend dependency. |
+| `shell.nix` | Development shell with Python, every backend dependency and the test tools. |
 | `docs/indicators.md` | Notes on the trading indicators planned for flipping. |
 | `init_database.py`, `sync_tables.py`, `env_template` | The original MariaDB scripts. No longer used; kept for reference only (see [Legacy scripts](#legacy-scripts)). |
 
@@ -63,9 +64,12 @@ uvicorn app.main:app --reload
 Check that it's running at <http://localhost:8000/api/v1/health>. The
 interactive API docs are at <http://localhost:8000/docs>.
 
+Run the unit tests from `backend/` with `pytest`. They don't need the database
+(see [Testing](backend/ReadME.md#testing)).
+
 ## Configuration
 
-The backend reads its database settings from environment variables
+The backend reads its settings from environment variables
 (`backend/app/core/config.py`). Never put credentials in the code.
 
 | Variable | Default | Notes |
@@ -75,6 +79,8 @@ The backend reads its database settings from environment variables
 | `DB_HOST` | `localhost` | `postgres-db` inside the deployed container network. |
 | `DB_PORT` | `5432` | |
 | `DB_NAME` | `geflipper` | |
+| `USER_AGENT` | `geFlipper - OSRS item price tracker` | Sent to the wiki APIs, which require a descriptive User-Agent. |
+| `ENABLE_COLLECTORS` | `1` | Set to `0` to run the API without the background collectors. |
 
 ## Deployment (NixOS)
 
@@ -147,8 +153,10 @@ docker network rm fastapi-network
 ```
 ## Roadmap
 
-- [ ] Background collectors for the wiki price endpoints
-- [ ] API endpoints for querying items and price history
+- [x] Daily GE price collector (Weird Gloop `os_dump.json`)
+- [x] Unit tests for the backend
+- [ ] Background collectors for the wiki price endpoints (`/latest`, `/5m`, `/1h`, `/timeseries`)
+- [ ] API endpoints for querying single items and price history (so far only a paginated `/price-data` list)
 - [ ] Indicators for every tracked item (see [`docs/indicators.md`](docs/indicators.md))
 - [ ] Work out how much of an item to buy, how long to hold it, and when to buy and sell
-- [ ] Run migrations automatically on deploy
+- [x] Run migrations automatically on deploy ( currently migrates via [`flake.nix`](flake.nix) )

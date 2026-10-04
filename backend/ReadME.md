@@ -29,6 +29,8 @@ backend/
     ├── models/               # SQLAlchemy models (registered in models/__init__.py)
     ├── schemas/              # Pydantic v2 schemas
     └── services/             # collectors/ (BaseCollector) and API clients (rswiki/)
+tests/                        # pytest suite (see Testing below)
+pytest.ini                    # pytest config: asyncio_mode = auto
 ```
 
 All imports use the `app.` prefix (for example `from app.db.base import Base`),
@@ -47,6 +49,48 @@ uvicorn app.main:app --reload
 
 The root README's [Quick start](../README.md#quick-start-local-development)
 shows how to start a local Postgres container.
+
+## Testing
+
+The unit tests live in `tests/` and use pytest with pytest-asyncio. They don't
+need Postgres or network access: the database is an in-memory SQLite engine
+(`aiosqlite`), and the wiki API is mocked. The dev shell includes everything
+the tests need.
+
+```sh
+nix-shell
+cd backend
+pytest                                   # whole suite
+pytest tests/test_rswiki_price_data.py   # one file
+pytest -k collect -v                     # tests matching a name
+```
+
+| File | Covers |
+| --- | --- |
+| `test_api.py` | `GET /health` and `GET /price-data`: pagination, response shape, query validation |
+| `test_handler.py` | `BaseHandler` CRUD, `list` ordering/offset/limit, `count` |
+| `test_rswiki_price_data.py` | Dump parsing, fetching (User-Agent, HTTP errors), and `collect()`: skipping unchanged dumps, chunked inserts, `ON CONFLICT DO NOTHING` |
+| `test_collector_base.py` | `BaseCollector`: one session per run, retry after failure, interval sleep |
+| `test_lifecycle.py` | `LifecycleTask` start/stop/restart |
+| `test_main.py` | `build_tasks()` with and without `ENABLE_COLLECTORS`, the `lifespan` hook, route mounting |
+| `test_config.py` | Settings from environment variables, password escaping |
+| `test_schemas.py` | Pydantic schemas and `Page` |
+
+`tests/conftest.py` sets `ENABLE_COLLECTORS=0` before the app is imported and
+provides these fixtures:
+
+- `db`: an `AsyncSession` on a fresh in-memory database with every table created.
+- `client`: an `httpx.AsyncClient` for the app, with `get_db` overridden to use
+  that database.
+- `price_row(id, ...)`: a helper that builds the column values for one
+  `price_data` row, with keyword overrides.
+
+SQLite doesn't support the Postgres-only parts of the code, such as
+`postgresql.insert(...).on_conflict_do_nothing()`, and it drops timezones from
+`timestamptz` columns. Tests for those parts use a mocked session and compile
+the statement with the Postgres dialect instead of running it. Check
+migrations and Postgres behaviour against a real database with
+`alembic upgrade head`.
 
 ## Database access
 
