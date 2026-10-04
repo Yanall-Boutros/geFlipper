@@ -86,11 +86,15 @@ The flake exports two NixOS modules and one package:
 | `nixosModules.fastapi` | Loads the Nix-built image into Docker at boot and runs it as `fastapi-backend` on port 8000. |
 | `packages.x86_64-linux.backend-image` | The backend image on its own (`nix build .#backend-image`). |
 
-### 1. Add the flake to your system configuration
-
+### 1. Update your flake.nix input and output dependencies, and configuration.nix
+flake.nix:
 ```nix
 {
-  inputs.geflipper.url = "github:<owner>/geFlipper";
+  inputs.geflipper = {
+	url = "github:Yanall-Boutros/geFlipper";# Alternatively, your own repo "github:<owner>/geFlipper";
+	inputs.nixpkgs.follows = "nixpkgs";
+  }
+
 
   outputs = { nixpkgs, geflipper, ... }: {
     nixosConfigurations.<host> = nixpkgs.lib.nixosSystem {
@@ -98,12 +102,15 @@ The flake exports two NixOS modules and one package:
       modules = [
         geflipper.nixosModules.postgres
         geflipper.nixosModules.fastapi
-        { virtualisation.docker.enable = true; }   # the modules don't enable Docker themselves
         # ...your other modules
       ];
     };
   };
 }
+```
+configuration.nix:
+```nix
+virtualisation.docker.enable = true;
 ```
 
 ### 2. Prepare the server
