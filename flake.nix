@@ -11,7 +11,7 @@
       pkgs = nixpkgs.legacyPackages.${system};
       lib = pkgs.lib;
       
-      fastapiImage = pkgs.dockerTools.streamLayeredImage {
+      fastapiImage = pkgs.dockerTools.buildLayeredImage {
         name = "fastapi-backend";
         tag = "latest";
         contents = [
