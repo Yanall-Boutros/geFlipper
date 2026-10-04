@@ -25,26 +25,29 @@
             requests
           ]))
         ];
+	extraCommands = ''
+          mkdir -p app
+          cp -r ${./backend}/* app/
+        '';
         config = {
           Cmd = [ "uvicorn" "app.main:app" "--host" "0.0.0.0" "--port" "8000" "--app-dir" "/app" ];
           ExposedPorts = { "8000/tcp" = {}; };
           WorkingDir = "/app";
         };
       };
+      backendSource = ./backend; # This might be bloat or not needed
 
     in {
       # Manual build hook: nix build .#backend-image
-      packages.${system}.backend-image = fastapiImage;
-
-      # --- EXPORT SEPARATE MODULES ---
-      nixosModules = {
-        # Module 1: Just the postgres database setup
-        postgres = import ./modules/postgres.nix;
-
-        # Module 2: Just the fastapi app (passing the compiled image package into it)
-        fastapi = { config, ... }: {
-          imports = [ (import ./modules/fastapi.nix { inherit pkgs fastapiImage; }) ];
-        };
-      };
+	packages.${system}.backend-image = fastapiImage;
+	nixosModules = {
+		postgres = ./modules/postgres.nix;
+		fastapi = ./modules/fastapi.nix;
+		default = { ... }: {
+		  imports = [ ./modules/postgres.nix ./modules/fastapi.nix ];
+		  services.geflipper.fastapi.package = lib.mkDefault fastapiImage;
+		  services.geflipper.fastapi.sourcePath = lib.mkDefault backendSource;
+		};
+	};
     };
 }
