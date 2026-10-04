@@ -22,9 +22,8 @@ in
     		  serviceConfig = {
     		    Type = "oneshot";
     		    RemainAfterExit = true;
-    		    ExecStartPrev = "-${pkgs.docker}/bin/docker network inspect fastapi-network";
-    		    ExecStart = "${pkgs.docker}/bin/docker network create fastapi-network";
-    		    ExecStop = "${pkgs.docker}/bin/docker network rm fastapi-network";
+    		    ExecStart = "${pkgs.docker}/bin/docker network inspect fastapi-network >/dev/null 2>&1 || ${pkgs.docker}/bin/docker network create fastapi-network'";
+    		    ExecStop = "${pkgs.docker}/bin/docker network rm fastapi-network || true";
     		  };
     		};
 

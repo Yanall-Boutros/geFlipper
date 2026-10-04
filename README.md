@@ -135,6 +135,15 @@ The modules expect these paths on the host:
 ```sh
 nix flake update
 nixos-rebuild switch
+
+```
+
+### 4. Resetting infrastructure
+Updates to the flake and how the services are scheduled might break previous builds. Resetting the docker network should allow systemd to appropriately handle future updates.
+```
+sudo docker stop postgres-db 
+docker network rm fastapi-network 
+
 ```
 ## Roadmap
 
