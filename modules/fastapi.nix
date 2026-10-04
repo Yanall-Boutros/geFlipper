@@ -1,7 +1,7 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.geflipper.fastapi;
-in {
+in 
 {
   # Automatically load the custom-built image stream into the local Docker daemon on boot
   options.services.geflipper.fastapi = {
