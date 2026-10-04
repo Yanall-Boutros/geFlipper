@@ -17,6 +17,7 @@
         contents = [
           pkgs.python3
           pkgs.cacert
+	  pkgs.busybox
           (pkgs.python3.withPackages (ps: with ps; [
             fastapi
             uvicorn
