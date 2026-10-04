@@ -22,9 +22,14 @@ in
     		  serviceConfig = {
     		    Type = "oneshot";
     		    RemainAfterExit = true;
-    		    ExecStart = "${pkgs.bash}/bin/bash -c '${pkgs.docker}/bin/docker network inspect fastapi-network >/dev/null 2>&1 || ${pkgs.docker}/bin/docker network create fastapi-network'";
-    		    ExecStop = "${pkgs.bash}/bin/bash -c '${pkgs.docker}/bin/docker network rm fastapi-network || true'";
+		    ExecStart = "-${pkgs.docker}/bin/docker network create fastapi-network";
+		    ExecStop = "-${pkgs.docker}/bin/docker network rm fastapi-network";
     		  };
+    		};
+
+		systemd.services.docker-postgres-db = {
+      			after = [ "init-fastapi-net.service" ];
+      			requires = [ "init-fastapi-net.service" ];
     		};
 
 		virtualisation.oci-containers = {
