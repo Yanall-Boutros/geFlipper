@@ -9,6 +9,7 @@
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
+      lib = pkgs.lib;
       
       fastapiImage = pkgs.dockerTools.streamLayeredImage {
         name = "fastapi-backend";
