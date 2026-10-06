@@ -1,7 +1,10 @@
+import os
+import time
+
 import pymysql
 import requests
-import time
 from dotenv import load_dotenv
+
 load_dotenv()
 # Database Credentials from Environment Variables
 DB_HOST = os.getenv("DB_HOST", "localhost")
@@ -62,19 +65,13 @@ PRIMARY KEY (id, timestamp, timestep)
 table_names = ["mappings", "5m", "1h", "recent", "item_history"]
 schemas = [mappings_schema, schema_5m, schema_1h, most_recent_schema, item_schema]
 
-HEADERS = {
-    "User-Agent": "PriceTrackerScript/1.0 (contact: yanallboutros@gmail.com)"
-}
+HEADERS = {"User-Agent": "PriceTrackerScript/1.0 (contact: yanallboutros@gmail.com)"}
 BASE_URL = "https://prices.runescape.wiki/api/v1/osrs"
 
 
 def get_connection(db=DB_NAME):
     return pymysql.connect(
-        host=DB_HOST,
-        user=DB_USER,
-        password=DB_PASS,
-        database=db,
-        autocommit=True
+        host=DB_HOST, user=DB_USER, password=DB_PASS, database=db, autocommit=True
     )
 
 
@@ -97,12 +94,14 @@ def make_table(table_name, schema_string, db_name=DB_NAME):
             cursor.execute(drop_query)
             create_query = f"CREATE TABLE IF NOT EXISTS `{table_name}` ({schema_string.strip()}) ENGINE=InnoDB;"
             cursor.execute(create_query)
-            
+
             print(f"Table '{table_name}' verified/created successfully.")
     finally:
         connection.close()
 
+
 # --- Ingestion Functions ---
+
 
 def update_mappings():
     response = requests.get(f"{BASE_URL}/mapping", headers=HEADERS)
@@ -124,14 +123,13 @@ def update_mappings():
             1 if item.get("members") else 0,
             item.get("highalch"),
             item.get("name"),
-            item.get("limit")
+            item.get("limit"),
         )
         for item in items
     ]
 
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.executemany(query, records)
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.executemany(query, records)
     print(f"[mappings] Processed {len(records)} records.")
 
 
@@ -160,14 +158,13 @@ def update_aggregated_prices(endpoint, table_name):
             stats.get("avgHighPrice"),
             stats.get("highPriceVolume"),
             stats.get("avgLowPrice"),
-            stats.get("lowPriceVolume")
+            stats.get("lowPriceVolume"),
         )
         for item_id, stats in data.items()
     ]
 
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.executemany(query, records)
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.executemany(query, records)
     print(f"[{table_name}] Processed {len(records)} records for timestamp {ts}.")
 
 
@@ -191,14 +188,13 @@ def update_recent_prices():
             stats.get("high"),
             stats.get("highTime"),
             stats.get("low"),
-            stats.get("lowTime")
+            stats.get("lowTime"),
         )
         for item_id, stats in data.items()
     ]
 
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.executemany(query, records)
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.executemany(query, records)
     print(f"[recent] Processed {len(records)} records.")
 
 
@@ -225,29 +221,30 @@ def fetch_item_history(item_id, timestep="5m"):
             entry.get("avgHighPrice"),
             entry.get("highPriceVolume"),
             entry.get("avgLowPrice"),
-            entry.get("lowPriceVolume")
+            entry.get("lowPriceVolume"),
         )
         for entry in history
     ]
 
     if records:
-        with get_connection() as conn:
-            with conn.cursor() as cursor:
-                cursor.executemany(query, records)
+        with get_connection() as conn, conn.cursor() as cursor:
+            cursor.executemany(query, records)
         print(f"[item_history] Inserted {len(records)} 5m records for item {item_id}.")
 
-def sync_all_item_histories(timesteps=["5m", "1h", "6h", "24h"]):
+
+def sync_all_item_histories(timesteps=("5m", "1h", "6h", "24h")):
     """
     Iterates over every item ID in mappings and fetches historical timeseries
     for each requested timestep (5m, 1h, 6h, 24h).
     """
     # 1. Get list of item IDs from local database
-    with get_connection() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute("SELECT id FROM mappings;")
-            item_ids = [row[0] for row in cursor.fetchall()]
+    with get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT id FROM mappings;")
+        item_ids = [row[0] for row in cursor.fetchall()]
 
-    print(f"[item_history] Starting historical sync for {len(item_ids)} items across timesteps: {timesteps}...")
+    print(
+        f"[item_history] Starting historical sync for {len(item_ids)} items across timesteps: {timesteps}..."
+    )
 
     insert_query = """
     INSERT INTO item_history (id, timestamp, timestep, avg_high_price, high_price_volume, avg_low_price, low_price_volume)
@@ -281,23 +278,26 @@ def sync_all_item_histories(timesteps=["5m", "1h", "6h", "24h"]):
                         entry.get("avgHighPrice"),
                         entry.get("highPriceVolume"),
                         entry.get("avgLowPrice"),
-                        entry.get("lowPriceVolume")
+                        entry.get("lowPriceVolume"),
                     )
                     for entry in history
                 ]
 
-                with get_connection() as conn:
-                    with conn.cursor() as cursor:
-                        cursor.executemany(insert_query, records)
+                with get_connection() as conn, conn.cursor() as cursor:
+                    cursor.executemany(insert_query, records)
 
                 total_records_inserted += len(records)
                 time.sleep(0.05)  # Rate limiting safety delay (~20 req/s max)
 
             except Exception as e:
-                print(f"[item_history] Error processing item {item_id} (timestep: {step}): {e}")
+                print(
+                    f"[item_history] Error processing item {item_id} (timestep: {step}): {e}"
+                )
 
         if index % 100 == 0 or index == len(item_ids):
-            print(f"[item_history] Progress: {index}/{len(item_ids)} items processed ({total_records_inserted} total rows updated).")
+            print(
+                f"[item_history] Progress: {index}/{len(item_ids)} items processed ({total_records_inserted} total rows updated)."
+            )
 
     print(f"[item_history] Complete. Total records synced: {total_records_inserted}.")
 
