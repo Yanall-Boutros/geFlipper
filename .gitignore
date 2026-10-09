@@ -1,3 +1,7 @@
 *.pyc
 __pycache__/
 .pytest_cache/
+.coverage
+
+# local registry push script
+push-images.sh

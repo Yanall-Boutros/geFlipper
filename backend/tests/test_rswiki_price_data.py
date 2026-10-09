@@ -2,8 +2,6 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from sqlalchemy.dialects import postgresql
-
 from app.core.config import settings
 from app.services.rswiki import priceData
 from app.services.rswiki.priceData import (
@@ -12,6 +10,7 @@ from app.services.rswiki.priceData import (
     UPDATE_DETECTED_KEY,
     RSWikiPriceData,
 )
+from sqlalchemy.dialects import postgresql
 
 JAGEX_EPOCH = 1790795575
 DETECTED_EPOCH = 1790795704.08317
@@ -46,6 +45,7 @@ def dump(*items: dict, jagex=JAGEX_EPOCH, detected=DETECTED_EPOCH) -> dict:
 
 # --- parsing ---------------------------------------------------------------
 
+
 def test_epoch_to_utc():
     assert RSWikiPriceData._epoch_to_utc(0) == datetime(1970, 1, 1, tzinfo=timezone.utc)
     assert RSWikiPriceData._epoch_to_utc("1.5").microsecond == 500000
@@ -55,8 +55,12 @@ def test_parse_stamps_update_times():
     [parsed] = RSWikiPriceData.parse_price_data(dump(item(10344)))
     assert parsed.id == 10344
     assert parsed.price == 43791831
-    assert parsed.jagex_timestamp == datetime.fromtimestamp(JAGEX_EPOCH, tz=timezone.utc)
-    assert parsed.update_detected == datetime.fromtimestamp(DETECTED_EPOCH, tz=timezone.utc)
+    assert parsed.jagex_timestamp == datetime.fromtimestamp(
+        JAGEX_EPOCH, tz=timezone.utc
+    )
+    assert parsed.update_detected == datetime.fromtimestamp(
+        DETECTED_EPOCH, tz=timezone.utc
+    )
 
 
 def test_parse_skips_non_item_keys():
@@ -89,6 +93,7 @@ def test_parse_requires_timestamps():
 
 # --- fetching --------------------------------------------------------------
 
+
 def test_fetch_sends_user_agent(monkeypatch):
     response = MagicMock()
     response.json.return_value = {"ok": True}
@@ -96,7 +101,9 @@ def test_fetch_sends_user_agent(monkeypatch):
     monkeypatch.setattr(priceData.requests, "get", get)
 
     assert RSWikiPriceData().fetch_price_data() == {"ok": True}
-    get.assert_called_once_with(BASE_DATA_URL, headers={"User-Agent": settings.USER_AGENT}, timeout=30)
+    get.assert_called_once_with(
+        BASE_DATA_URL, headers={"User-Agent": settings.USER_AGENT}, timeout=30
+    )
     response.raise_for_status.assert_called_once()
 
 
@@ -110,6 +117,7 @@ def test_fetch_raises_http_errors(monkeypatch):
 
 
 # --- collecting ------------------------------------------------------------
+
 
 def make_db(latest: datetime | None):
     db = MagicMock()
@@ -185,6 +193,7 @@ def test_chunk_size_fits_asyncpg_parameter_limit():
 
 
 # --- script entry point ----------------------------------------------------
+
 
 @pytest.mark.filterwarnings("ignore:.*found in sys.modules:RuntimeWarning")
 def test_main_block_prints_item_count(monkeypatch, capsys):

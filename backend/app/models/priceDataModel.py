@@ -1,9 +1,12 @@
-from sqlalchemy import BigInteger, Column, DateTime, Index, Integer, String, Boolean
+from sqlalchemy import BigInteger, Boolean, Column, DateTime, Index, Integer, String
+
 from app.db.base import Base
+
 
 class PriceDataModel(Base):
     """One row per item per Jagex GE update: a time series keyed on (id, jagex_timestamp)."""
-    __tablename__ = 'price_data'
+
+    __tablename__ = "price_data"
 
     id = Column(Integer, primary_key=True)  # item id
     # When Jagex published this set of GE prices (the dump's %JAGEX_TIMESTAMP%)
@@ -25,5 +28,5 @@ class PriceDataModel(Base):
 
     __table_args__ = (
         # "every item at update X" and "latest update" queries
-        Index('ix_price_data_jagex_timestamp', 'jagex_timestamp'),
+        Index("ix_price_data_jagex_timestamp", "jagex_timestamp"),
     )

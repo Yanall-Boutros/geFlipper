@@ -1,9 +1,9 @@
 import pytest
-from pydantic import ValidationError
-
 from app.models import PriceDataModel
 from app.schemas.pagination import Page
 from app.schemas.rswiki.priceData import PriceDataSchema, PriceDataSchemaCreate
+from pydantic import ValidationError
+
 from tests.conftest import price_row
 
 
@@ -21,7 +21,10 @@ def test_untraded_item_fields_are_optional():
     assert schema.price is None and schema.limit is None
 
 
-@pytest.mark.parametrize("missing", ["name", "examine", "members", "icon", "jagex_timestamp", "update_detected"])
+@pytest.mark.parametrize(
+    "missing",
+    ["name", "examine", "members", "icon", "jagex_timestamp", "update_detected"],
+)
 def test_required_fields(missing):
     row = price_row(1)
     del row[missing]

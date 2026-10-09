@@ -1,11 +1,12 @@
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
 from app.core.config import settings
 
 # Async PostgreSQL requires the 'postgresql+asyncpg://' driver scheme
 engine = create_async_engine(
     settings.DATABASE_URL,
     pool_pre_ping=True,  # Automatically tests dead connections
-    echo=False
+    echo=False,
 )
 
 SessionLocal = async_sessionmaker(
@@ -13,5 +14,5 @@ SessionLocal = async_sessionmaker(
     autocommit=False,
     autoflush=False,
     bind=engine,
-    class_=AsyncSession
+    class_=AsyncSession,
 )

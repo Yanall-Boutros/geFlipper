@@ -1,8 +1,7 @@
-from fastapi import FastAPI
-
 from app import main
 from app.core.lifecycle import LifecycleTask
 from app.services.rswiki.priceData import RSWikiPriceData
+from fastapi import FastAPI
 
 
 def test_build_tasks_with_collectors(monkeypatch):

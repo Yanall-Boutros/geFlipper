@@ -45,8 +45,10 @@ The dump also holds the non-item keys "%JAGEX_TIMESTAMP%": 1790795575 and
 "%UPDATE_DETECTED%": 1790795704.08317, which are stamped onto every row.
 """
 
+
 class RSWikiPriceData(BaseCollector):
     """Appends one row per item each time Jagex publishes new GE prices (~daily)."""
+
     name = "rswiki_price_data"
     # Jagex's update time drifts, so poll often; unchanged dumps are skipped
     interval = 30 * 60
@@ -80,11 +82,15 @@ class RSWikiPriceData(BaseCollector):
             if not isinstance(value, dict):
                 continue
             try:
-                items.append(PriceDataSchemaCreate.model_validate({
-                    **value,
-                    "jagex_timestamp": jagex_timestamp,
-                    "update_detected": update_detected,
-                }))
+                items.append(
+                    PriceDataSchemaCreate.model_validate(
+                        {
+                            **value,
+                            "jagex_timestamp": jagex_timestamp,
+                            "update_detected": update_detected,
+                        }
+                    )
+                )
             except ValueError:
                 logger.warning("skipping invalid item %s", key, exc_info=True)
         return items
@@ -101,13 +107,22 @@ class RSWikiPriceData(BaseCollector):
 
         rows = [item.model_dump() for item in self.parse_price_data(raw)]
         for start in range(0, len(rows), INSERT_CHUNK_SIZE):
-            stmt = insert(PriceDataModel).values(rows[start:start + INSERT_CHUNK_SIZE])
+            stmt = insert(PriceDataModel).values(
+                rows[start : start + INSERT_CHUNK_SIZE]
+            )
             # Existing rows are history; never overwrite them
-            await db.execute(stmt.on_conflict_do_nothing(
-                index_elements=[PriceDataModel.id, PriceDataModel.jagex_timestamp],
-            ))
+            await db.execute(
+                stmt.on_conflict_do_nothing(
+                    index_elements=[PriceDataModel.id, PriceDataModel.jagex_timestamp],
+                )
+            )
         await db.commit()
-        logger.info("inserted %d items for Jagex update %s", len(rows), jagex_timestamp.isoformat())
+        logger.info(
+            "inserted %d items for Jagex update %s",
+            len(rows),
+            jagex_timestamp.isoformat(),
+        )
+
 
 if __name__ == "__main__":
     price_data_service = RSWikiPriceData()

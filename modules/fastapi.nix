@@ -1,7 +1,12 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.services.geflipper.fastapi;
-in 
+in
 {
   # Automatically load the custom-built image stream into the local Docker daemon on boot
   options.services.geflipper.fastapi = {
@@ -22,8 +27,14 @@ in
   };
   config = lib.mkIf cfg.enable {
     systemd.services.docker-fastapi-backend = {
-      after = [ "init-fastapi-net.service" "docker-postgres-db.service" ];
-      requires = [ "init-fastapi-net.service" "docker-postgres-db.service" ];
+      after = [
+        "init-fastapi-net.service"
+        "docker-postgres-db.service"
+      ];
+      requires = [
+        "init-fastapi-net.service"
+        "docker-postgres-db.service"
+      ];
     };
     virtualisation.oci-containers = {
       backend = "docker";
@@ -31,7 +42,7 @@ in
         image = "fastapi-backend:latest";
         imageFile = cfg.package;
         ports = [ "8000:8000" ];
-	volumes = [ 
+        volumes = [
           "${cfg.sourcePath}:/app"
         ];
         environment = {
@@ -40,7 +51,7 @@ in
           DB_USER = "root";
           DB_NAME = "geflipper";
         };
-	environmentFiles = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
+        environmentFiles = lib.optional (cfg.environmentFile != null) cfg.environmentFile;
         extraOptions = [ "--network=fastapi-network" ];
       };
     };

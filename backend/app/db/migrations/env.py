@@ -1,11 +1,11 @@
 import asyncio
 from logging.config import fileConfig
+
+from alembic import context
 from app.core.config import settings
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
-from alembic import context
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -21,7 +21,7 @@ if config.config_file_name is not None:
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 from app.db.base import Base  # noqa
-import app.models  # noqa: registers models on Base.metadata
+import app.models  # noqa: F401 - registers models on Base.metadata
 
 if settings.DATABASE_URL:
     escaped_url = str(settings.DATABASE_URL).replace("%", "%%")

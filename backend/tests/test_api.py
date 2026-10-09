@@ -1,6 +1,6 @@
 import pytest
-
 from app.models import PriceDataModel
+
 from tests.conftest import price_row
 
 
@@ -32,19 +32,34 @@ async def test_price_data_page(client, seeded):
 
 
 async def test_price_data_item_shape(client, seeded):
-    item = (await client.get("/api/v1/price-data", params={"limit": 1})).json()["items"][0]
+    item = (await client.get("/api/v1/price-data", params={"limit": 1})).json()[
+        "items"
+    ][0]
     expected = price_row(1)
     assert set(item) == set(expected)
-    for key in ("id", "name", "examine", "price", "last", "volume", "members", "limit", "icon"):
+    for key in (
+        "id",
+        "name",
+        "examine",
+        "price",
+        "last",
+        "volume",
+        "members",
+        "limit",
+        "icon",
+    ):
         assert item[key] == expected[key]
 
 
-@pytest.mark.parametrize("params", [
-    {"offset": -1},
-    {"limit": 0},
-    {"limit": 1001},
-    {"limit": "abc"},
-])
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"offset": -1},
+        {"limit": 0},
+        {"limit": 1001},
+        {"limit": "abc"},
+    ],
+)
 async def test_price_data_rejects_bad_params(client, params):
     response = await client.get("/api/v1/price-data", params=params)
     assert response.status_code == 422

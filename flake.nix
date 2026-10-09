@@ -5,52 +5,65 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
   };
 
-  outputs = { self, nixpkgs }:
+  outputs =
+    { self, nixpkgs }:
     let
       system = "x86_64-linux";
       pkgs = nixpkgs.legacyPackages.${system};
       lib = pkgs.lib;
-      
+
       fastapiImage = pkgs.dockerTools.buildLayeredImage {
         name = "fastapi-backend";
         tag = "latest";
         contents = [
           pkgs.python3
           pkgs.cacert
-	  pkgs.busybox
-          (pkgs.python3.withPackages (ps: with ps; [
-            fastapi
-            uvicorn
-	    alembic
-            sqlalchemy
-            asyncpg
-            pydantic
-            requests
-          ]))
+          pkgs.busybox
+          (pkgs.python3.withPackages (
+            ps: with ps; [
+              fastapi
+              uvicorn
+              alembic
+              sqlalchemy
+              asyncpg
+              pydantic
+              requests
+            ]
+          ))
         ];
-	extraCommands = ''
+        extraCommands = ''
           mkdir -p app
           cp -r ${./backend}/* app/
         '';
         config = {
-          Cmd = [ "sh" "-c" "alembic -c /app/app/alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir /app" ];
-          ExposedPorts = { "8000/tcp" = {}; };
+          Cmd = [
+            "sh"
+            "-c"
+            "alembic -c /app/app/alembic.ini upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --app-dir /app"
+          ];
+          ExposedPorts = {
+            "8000/tcp" = { };
+          };
           WorkingDir = "/app";
         };
       };
       backendSource = ./backend; # This might be bloat or not needed
 
-    in {
+    in
+    {
       # Manual build hook: nix build .#backend-image
-	packages.${system}.backend-image = fastapiImage;
-	nixosModules = {
-		postgres = ./modules/postgres.nix;
-		fastapi = ./modules/fastapi.nix;
-		default = { ... }: {
-		  imports = [ ./modules/postgres.nix ./modules/fastapi.nix ];
-		  services.geflipper.fastapi.package = lib.mkDefault fastapiImage;
-		  services.geflipper.fastapi.sourcePath = lib.mkDefault backendSource;
-		};
-	};
+      packages.${system}.backend-image = fastapiImage;
+      nixosModules = {
+        postgres = ./modules/postgres.nix;
+        fastapi = ./modules/fastapi.nix;
+        default = { ... }: {
+          imports = [
+            ./modules/postgres.nix
+            ./modules/fastapi.nix
+          ];
+          services.geflipper.fastapi.package = lib.mkDefault fastapiImage;
+          services.geflipper.fastapi.sourcePath = lib.mkDefault backendSource;
+        };
+      };
     };
 }

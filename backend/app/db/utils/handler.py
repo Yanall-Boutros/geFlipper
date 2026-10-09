@@ -3,6 +3,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+
 class BaseHandler:
     def __init__(self, db_session: AsyncSession):
         self.db_session = db_session
@@ -39,4 +40,6 @@ class BaseHandler:
 
     async def count(self, model_class):
         """Count every record of a model."""
-        return await self.db_session.scalar(select(func.count()).select_from(model_class))
+        return await self.db_session.scalar(
+            select(func.count()).select_from(model_class)
+        )

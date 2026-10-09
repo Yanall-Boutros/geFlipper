@@ -1,13 +1,13 @@
 import asyncio
 
 import pytest
-
 from app.services.collectors import base
 from app.services.collectors.base import BaseCollector
 
 
 class FakeSessionLocal:
     """Stands in for SessionLocal: an async context manager yielding a sentinel."""
+
     def __init__(self):
         self.session = object()
         self.opened = 0

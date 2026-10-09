@@ -8,20 +8,21 @@ os.environ["ENABLE_COLLECTORS"] = "0"
 
 from datetime import datetime, timezone
 
+import app.models  # noqa: F401 - registers models on Base.metadata
 import pytest
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
-import app.models  # noqa: registers models on Base.metadata
 from app.api.deps import get_db
 from app.db.base import Base
 from app.main import app as fastapi_app
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 JAGEX_TIMESTAMP = datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc)
 UPDATE_DETECTED = datetime(2026, 9, 30, 12, 2, tzinfo=timezone.utc)
 
 
-def price_row(item_id: int, jagex_timestamp: datetime = JAGEX_TIMESTAMP, **overrides) -> dict:
+def price_row(
+    item_id: int, jagex_timestamp: datetime = JAGEX_TIMESTAMP, **overrides
+) -> dict:
     """Column values for one price_data row."""
     return {
         "id": item_id,
@@ -65,11 +66,14 @@ async def db(session_factory):
 @pytest.fixture
 async def client(session_factory):
     """HTTP client for the app, with get_db pointed at the SQLite database."""
+
     async def override_get_db():
         async with session_factory() as session:
             yield session
 
     fastapi_app.dependency_overrides[get_db] = override_get_db
-    async with AsyncClient(transport=ASGITransport(app=fastapi_app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=fastapi_app), base_url="http://test"
+    ) as client:
         yield client
     fastapi_app.dependency_overrides.clear()

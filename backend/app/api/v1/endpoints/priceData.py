@@ -9,6 +9,7 @@ from app.schemas.rswiki.priceData import PriceDataSchema
 
 router = APIRouter(prefix="/price-data", tags=["price-data"])
 
+
 @router.get("", response_model=Page[PriceDataSchema])
 async def list_price_data(
     offset: int = Query(0, ge=0),

@@ -2,6 +2,7 @@ from datetime import timedelta
 
 from app.db.utils.handler import BaseHandler
 from app.models import PriceDataModel
+
 from tests.conftest import JAGEX_TIMESTAMP, price_row
 
 
@@ -49,7 +50,9 @@ async def test_count(db):
 
 async def test_list_orders_by_primary_key(db):
     later = JAGEX_TIMESTAMP + timedelta(days=1)
-    await add_rows(db, price_row(2, later), price_row(1, later), price_row(2), price_row(1))
+    await add_rows(
+        db, price_row(2, later), price_row(1, later), price_row(2), price_row(1)
+    )
 
     items = await BaseHandler(db).list(PriceDataModel)
     assert [item.id for item in items] == [1, 1, 2, 2]
@@ -72,6 +75,10 @@ async def test_list_past_end_is_empty(db):
 
 
 async def test_list_custom_order(db):
-    await add_rows(db, price_row(1, price=30), price_row(2, price=10), price_row(3, price=20))
-    items = await BaseHandler(db).list(PriceDataModel, order_by=[PriceDataModel.price.desc()])
+    await add_rows(
+        db, price_row(1, price=30), price_row(2, price=10), price_row(3, price=20)
+    )
+    items = await BaseHandler(db).list(
+        PriceDataModel, order_by=[PriceDataModel.price.desc()]
+    )
     assert [item.id for item in items] == [1, 3, 2]
