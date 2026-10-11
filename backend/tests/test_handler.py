@@ -82,3 +82,18 @@ async def test_list_custom_order(db):
         PriceDataModel, order_by=[PriceDataModel.price.desc()]
     )
     assert [item.id for item in items] == [1, 3, 2]
+
+
+async def test_list_filters(db):
+    await add_rows(db, *(price_row(i, price=i * 10) for i in range(1, 6)))
+    items = await BaseHandler(db).list(
+        PriceDataModel, filters=[PriceDataModel.price > 20, PriceDataModel.id != 4]
+    )
+    assert [item.id for item in items] == [3, 5]
+
+
+async def test_count_filters(db):
+    await add_rows(db, *(price_row(i, price=i * 10) for i in range(1, 6)))
+    handler = BaseHandler(db)
+    assert await handler.count(PriceDataModel, filters=[PriceDataModel.price > 20]) == 3
+    assert await handler.count(PriceDataModel, filters=[PriceDataModel.id == 99]) == 0

@@ -16,7 +16,8 @@ backend/
     │   ├── deps.py           # get_db(): per-request AsyncSession dependency
     │   └── v1/
     │       ├── router.py     # v1 router: GET /health, includes endpoints/
-    │       └── endpoints/    # one router per resource (priceData.py: GET /price-data)
+    │       └── endpoints/    # one router per resource (priceData.py: GET /price-data,
+    │                         #   items.py: GET /items/{id}, GET /items/{id}/history)
     ├── core/
     │   ├── config.py         # settings loaded from environment variables
     │   ├── lifecycle.py      # LifecycleTask: base for app-lifetime background tasks
@@ -68,7 +69,8 @@ pytest -k collect -v                     # tests matching a name
 | File | Covers |
 | --- | --- |
 | `test_api.py` | `GET /health` and `GET /price-data`: pagination, response shape, query validation |
-| `test_handler.py` | `BaseHandler` CRUD, `list` ordering/offset/limit, `count` |
+| `test_items.py` | `GET /items/{id}` (latest snapshot, 404) and `GET /items/{id}/history`: ordering, pagination, inclusive `start`/`end` range, 404, query validation |
+| `test_handler.py` | `BaseHandler` CRUD, `list` ordering/offset/limit/filters, `count` with filters |
 | `test_rswiki_price_data.py` | Dump parsing, fetching (User-Agent, HTTP errors), and `collect()`: skipping unchanged dumps, chunked inserts, `ON CONFLICT DO NOTHING` |
 | `test_collector_base.py` | `BaseCollector`: one session per run, retry after failure, interval sleep |
 | `test_lifecycle.py` | `LifecycleTask` start/stop/restart |
@@ -105,18 +107,31 @@ from app.api.deps import get_db
 from app.db.utils.handler import BaseHandler
 from app.models import PriceDataModel
 
-@api_router.get("/items/{item_id}")
+@router.get("/{item_id}")
 async def get_item(item_id: int, db: AsyncSession = Depends(get_db)):
-    return await BaseHandler(db).read(PriceDataModel, item_id)
+    latest = await BaseHandler(db).list(
+        PriceDataModel,
+        limit=1,
+        order_by=[PriceDataModel.jagex_timestamp.desc()],
+        filters=[PriceDataModel.id == item_id],
+    )
+    ...
 ```
 
-`BaseHandler` also has `list(model, offset, limit, order_by)` and
-`count(model)` for paginated endpoints. Wrap the result in
+`BaseHandler` has `list(model, offset, limit, order_by, filters)` and
+`count(model, filters)` for filtered, paginated endpoints. `read(model, pk)`
+needs the full primary key, which for `price_data` is `(id, jagex_timestamp)`. Wrap the result in
 `app.schemas.pagination.Page`:
 
 ```sh
 curl 'localhost:8000/api/v1/price-data?offset=0&limit=100'
 # {"items": [...], "total": 4662, "offset": 0, "limit": 100}
+
+curl 'localhost:8000/api/v1/items/4151'
+# latest snapshot of one item (404 if unknown)
+
+curl 'localhost:8000/api/v1/items/4151/history?start=2026-10-01T00:00:00Z&limit=50'
+# {"items": [{"jagex_timestamp": ..., "price": ..., "last": ..., "volume": ...}, ...], "total": ..., ...}
 ```
 
 `limit` defaults to 100 and is capped at 1000. Rows are ordered by item id,

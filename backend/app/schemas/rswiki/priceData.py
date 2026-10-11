@@ -35,3 +35,14 @@ class PriceDataSchemaUpdate(PriceDataSchemaBase):
 
 class PriceDataSchema(PriceDataSchemaBase):
     pass
+
+
+# One point of an item's price history; the static item fields live on PriceDataSchema
+class PricePointSchema(BaseModel):
+    jagex_timestamp: datetime
+    update_detected: datetime
+    price: int | None = None
+    last: int | None = None
+    volume: int | None = None
+
+    model_config = ConfigDict(from_attributes=True)
