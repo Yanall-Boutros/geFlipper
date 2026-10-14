@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
+from typing import Any, cast
 
 import requests
 from sqlalchemy import func, select
@@ -22,6 +23,10 @@ INSERT_CHUNK_SIZE = 1000
 # Non-item keys in the dump, both Unix epoch seconds
 JAGEX_TIMESTAMP_KEY = "%JAGEX_TIMESTAMP%"  # when Jagex published the GE prices
 UPDATE_DETECTED_KEY = "%UPDATE_DETECTED%"  # when the wiki noticed the update
+
+# Keys every item in the dump carries. Untraded items leave out price/last/volume,
+# alch values and limit, so those stay optional.
+REQUIRED_ITEM_KEYS = ("id", "name", "examine", "members", "icon")
 
 """
 EXAMPLE DATA STRUCTURE FROM RSWIKI API:
@@ -57,7 +62,7 @@ class RSWikiPriceData(BaseCollector):
         super().__init__()
         self.base_url = BASE_DATA_URL
 
-    def fetch_price_data(self) -> dict:
+    def fetch_price_data(self) -> dict[str, Any]:
         """Fetches the latest price data from the RSWiki API"""
         response = requests.get(
             self.base_url,
@@ -68,29 +73,34 @@ class RSWikiPriceData(BaseCollector):
         return response.json()
 
     @staticmethod
-    def _epoch_to_utc(value) -> datetime:
+    def _epoch_to_utc(value: Any) -> datetime:
         return datetime.fromtimestamp(float(value), tz=timezone.utc)
 
     @classmethod
-    def parse_price_data(cls, raw: dict) -> list[PriceDataSchemaCreate]:
+    def parse_price_data(cls, raw: dict[str, Any]) -> list[PriceDataSchemaCreate]:
         """Validate each item in the dump, stamping it with the dump's update times."""
         jagex_timestamp = cls._epoch_to_utc(raw[JAGEX_TIMESTAMP_KEY])
         update_detected = cls._epoch_to_utc(raw[UPDATE_DETECTED_KEY])
 
-        items = []
+        items: list[PriceDataSchemaCreate] = []
         for key, value in raw.items():
             if not isinstance(value, dict):
                 continue
             try:
-                items.append(
-                    PriceDataSchemaCreate.model_validate(
-                        {
-                            **value,
-                            "jagex_timestamp": jagex_timestamp,
-                            "update_detected": update_detected,
-                        }
-                    )
+                missing = [k for k in REQUIRED_ITEM_KEYS if k not in value]
+                if missing:
+                    raise ValueError(f"missing {', '.join(missing)}")
+
+                payload: dict[str, Any] = {
+                    **value,
+                    "jagex_timestamp": jagex_timestamp,
+                    "update_detected": update_detected,
+                }
+                item = cast(
+                    PriceDataSchemaCreate,
+                    PriceDataSchemaCreate.model_validate(payload),
                 )
+                items.append(item)
             except ValueError:
                 logger.warning("skipping invalid item %s", key, exc_info=True)
         return items
