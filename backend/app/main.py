@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.lifecycle import LifecycleTask
+from app.services.indicators.engine import IndicatorEngine
 from app.services.rswiki.priceData import RSWikiPriceData
 
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +19,7 @@ def build_tasks() -> list[LifecycleTask]:
         return []
     return [
         RSWikiPriceData(),
+        IndicatorEngine(),
     ]
 
 

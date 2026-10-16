@@ -206,3 +206,22 @@ def test_main_block_prints_item_count(monkeypatch, capsys):
     runpy.run_module("app.services.rswiki.priceData", run_name="__main__")
 
     assert capsys.readouterr().out.splitlines()[0] == "2"
+
+
+async def test_collect_signals_new_data():
+    from app.core.events import price_data_updated
+
+    price_data_updated.clear()
+    await collector_with(dump(item(1))).collect(make_db(None))
+    assert price_data_updated.is_set()
+    price_data_updated.clear()
+
+
+async def test_collect_does_not_signal_unchanged_dump():
+    from app.core.events import price_data_updated
+
+    price_data_updated.clear()
+    await collector_with(dump(item(1))).collect(
+        make_db(datetime.fromtimestamp(JAGEX_EPOCH, tz=timezone.utc))
+    )
+    assert not price_data_updated.is_set()

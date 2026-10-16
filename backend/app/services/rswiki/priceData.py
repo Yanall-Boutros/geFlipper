@@ -9,6 +9,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.events import price_data_updated
 from app.models.priceDataModel import PriceDataModel
 from app.schemas.rswiki.priceData import PriceDataSchemaCreate
 from app.services.collectors.base import BaseCollector
@@ -132,6 +133,7 @@ class RSWikiPriceData(BaseCollector):
             len(rows),
             jagex_timestamp.isoformat(),
         )
+        price_data_updated.set()
 
 
 if __name__ == "__main__":

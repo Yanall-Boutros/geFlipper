@@ -33,7 +33,10 @@ class BaseHandler:
     async def list(
         self, model_class, offset: int = 0, limit: int = 100, order_by=None, filters=()
     ):
-        """Read a page of records matching `filters`, ordered by `order_by` (defaults to the primary key)."""
+        """Read a page of records matching `filters`, ordered by `order_by`.
+
+        `order_by` defaults to the primary key.
+        """
         if order_by is None:
             order_by = model_class.__mapper__.primary_key
         stmt = (

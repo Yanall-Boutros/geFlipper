@@ -1,5 +1,6 @@
 from app import main
 from app.core.lifecycle import LifecycleTask
+from app.services.indicators.engine import IndicatorEngine
 from app.services.rswiki.priceData import RSWikiPriceData
 from fastapi import FastAPI
 
@@ -7,7 +8,7 @@ from fastapi import FastAPI
 def test_build_tasks_with_collectors(monkeypatch):
     monkeypatch.setattr(main.settings, "ENABLE_COLLECTORS", True)
     tasks = main.build_tasks()
-    assert [type(task) for task in tasks] == [RSWikiPriceData]
+    assert [type(task) for task in tasks] == [RSWikiPriceData, IndicatorEngine]
 
 
 def test_build_tasks_without_collectors(monkeypatch):
