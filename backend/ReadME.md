@@ -16,22 +16,27 @@ backend/
     │   ├── deps.py           # get_db(): per-request AsyncSession dependency
     │   └── v1/
     │       ├── router.py     # v1 router: GET /health, includes endpoints/
-    │       └── endpoints/    # one router per resource (priceData.py: GET /price-data,
-    │                         #   items.py: GET /items/{id}, GET /items/{id}/history)
+    │       └── endpoints/    # one router per resource:
+    │                         #   priceData.py: GET /price-data
+    │                         #   items.py: GET /items/{id}, /history, /indicators
     ├── core/
     │   ├── config.py         # settings loaded from environment variables
+    │   ├── events.py         # price_data_updated: collector -> indicator engine signal
     │   ├── lifecycle.py      # LifecycleTask: base for app-lifetime background tasks
-    │   └── security.py       # placeholder
+    │   └── security.py       # empty placeholder
     ├── db/
     │   ├── base.py           # declarative Base shared by every model
     │   ├── database.py       # async engine + SessionLocal
-    │   ├── utils/handler.py  # BaseHandler: async create/read/update/delete
+    │   ├── utils/handler.py  # BaseHandler: async CRUD plus filtered list/count
     │   └── migrations/       # Alembic env.py, template and versions/
-    ├── models/               # SQLAlchemy models (registered in models/__init__.py)
-    ├── schemas/              # Pydantic v2 schemas
-    └── services/             # collectors/ (BaseCollector) and API clients (rswiki/)
+    ├── models/               # PriceDataModel, ItemIndicatorsModel (registered in __init__.py)
+    ├── schemas/              # Pydantic v2 schemas: rswiki/priceData.py, indicators.py, pagination.py
+    └── services/
+        ├── collectors/       # BaseCollector: run collect(db) every `interval` seconds
+        ├── rswiki/           # RSWikiPriceData: the GE price collector
+        └── indicators/       # IndicatorEngine and one module per indicator
 tests/                        # pytest suite (see Testing below)
-pytest.ini                    # pytest config: asyncio_mode = auto
+pytest.ini                    # pytest config: asyncio_mode = auto, coverage report
 ```
 
 All imports use the `app.` prefix (for example `from app.db.base import Base`),
@@ -70,8 +75,12 @@ pytest -k collect -v                     # tests matching a name
 | --- | --- |
 | `test_api.py` | `GET /health` and `GET /price-data`: pagination, response shape, query validation |
 | `test_items.py` | `GET /items/{id}` (latest snapshot, 404) and `GET /items/{id}/history`: ordering, pagination, inclusive `start`/`end` range, 404, query validation |
+| `test_indicators_api.py` | `GET /items/{id}/indicators`, plus an end-to-end run of every real indicator through the engine |
+| `test_indicator_engine.py` | `IndicatorEngine`: catch-up order, idempotency, skipping unpriced updates, the window/previous-row plumbing, waking on the signal, surviving failures |
+| `test_indicators_<name>.py` | One file per indicator module, checked against hand-worked values |
 | `test_handler.py` | `BaseHandler` CRUD, `list` ordering/offset/limit/filters, `count` with filters |
-| `test_rswiki_price_data.py` | Dump parsing, fetching (User-Agent, HTTP errors), and `collect()`: skipping unchanged dumps, chunked inserts, `ON CONFLICT DO NOTHING` |
+| `test_deps.py` | `get_db` yields a session and closes it |
+| `test_rswiki_price_data.py` | Dump parsing (required keys, untraded items), fetching (User-Agent, HTTP errors), and `collect()`: skipping unchanged dumps, chunked inserts, `ON CONFLICT DO NOTHING`, signalling the indicator engine |
 | `test_collector_base.py` | `BaseCollector`: one session per run, retry after failure, interval sleep |
 | `test_lifecycle.py` | `LifecycleTask` start/stop/restart |
 | `test_main.py` | `build_tasks()` with and without `ENABLE_COLLECTORS`, the `lifespan` hook, route mounting |
@@ -81,17 +90,26 @@ pytest -k collect -v                     # tests matching a name
 `tests/conftest.py` sets `ENABLE_COLLECTORS=0` before the app is imported and
 provides these fixtures:
 
-- `db`: an `AsyncSession` on a fresh in-memory database with every table created.
+- `engine` / `session_factory`: a fresh in-memory database with every table
+  created, and a session factory bound to it (pass it to `IndicatorEngine`).
+- `db`: an `AsyncSession` on that database.
 - `client`: an `httpx.AsyncClient` for the app, with `get_db` overridden to use
   that database.
-- `price_row(id, ...)`: a helper that builds the column values for one
-  `price_data` row, with keyword overrides.
+- `price_row(id, jagex_timestamp=JAGEX_TIMESTAMP, **overrides)`: a helper that
+  builds the column values for one `price_data` row.
 
-SQLite doesn't support the Postgres-only parts of the code, such as
-`postgresql.insert(...).on_conflict_do_nothing()`, and it drops timezones from
-`timestamptz` columns. Tests for those parts use a mocked session and compile
-the statement with the Postgres dialect instead of running it. Check
-migrations and Postgres behaviour against a real database with
+`tests/indicator_helpers.py` has `points(prices, volumes=None)`, which builds
+daily `Point`s for the indicator unit tests.
+
+SQLite doesn't support some Postgres-only code, and it drops timezones from
+`timestamptz` columns, so a timestamp read back from SQLite is naive.
+- The collector's `postgresql.insert(...).on_conflict_do_nothing()` is tested
+  with a mocked session. The tests compile the statement with the Postgres
+  dialect instead of running it.
+- The indicator engine picks the SQLite or Postgres `insert` from the
+  session's dialect, so its tests run for real on SQLite.
+
+Check migrations and Postgres behaviour against a real database with
 `alembic upgrade head`.
 
 ## Database access
@@ -119,9 +137,11 @@ async def get_item(item_id: int, db: AsyncSession = Depends(get_db)):
 ```
 
 `BaseHandler` has `list(model, offset, limit, order_by, filters)` and
-`count(model, filters)` for filtered, paginated endpoints. `read(model, pk)`
-needs the full primary key, which for `price_data` is `(id, jagex_timestamp)`. Wrap the result in
-`app.schemas.pagination.Page`:
+`count(model, filters)` for filtered, paginated endpoints; wrap their results
+in `app.schemas.pagination.Page`. `read(model, pk)` needs the full primary key,
+which for `price_data` and `item_indicators` is `(id, jagex_timestamp)`.
+`items.py`'s `item_time_series()` builds the paginated, range-filtered page for
+any model keyed that way.
 
 ```sh
 curl 'localhost:8000/api/v1/price-data?offset=0&limit=100'
@@ -131,11 +151,15 @@ curl 'localhost:8000/api/v1/items/4151'
 # latest snapshot of one item (404 if unknown)
 
 curl 'localhost:8000/api/v1/items/4151/history?start=2026-10-01T00:00:00Z&limit=50'
-# {"items": [{"jagex_timestamp": ..., "price": ..., "last": ..., "volume": ...}, ...], "total": ..., ...}
+# {"items": [{"jagex_timestamp": ..., "update_detected": ..., "price": ..., "last": ..., "volume": ...}, ...], "total": ..., ...}
+
+curl 'localhost:8000/api/v1/items/4151/indicators?limit=50'
+# {"items": [{"jagex_timestamp": ..., "samples": ..., "ema_5": ..., "rsi_14": ..., ...}, ...], "total": ..., ...}
 ```
 
-`limit` defaults to 100 and is capped at 1000. Rows are ordered by item id,
-then `jagex_timestamp`.
+`limit` defaults to 100 and is capped at 1000. `/price-data` is ordered by item
+id, then `jagex_timestamp`. The per-item routes are ordered oldest first, and
+`start`/`end` are inclusive (`start` after `end` returns 422).
 
 Every `BaseHandler` method is async and must be awaited. Validate incoming
 data with a Pydantic schema before handing it to the handler. The schemas set
@@ -177,9 +201,13 @@ alembic upgrade head --sql    # print the SQL without connecting (review before 
 
 ### Running migrations in production
 
-The backend image doesn't include Alembic, and the container doesn't migrate on
-startup. For now, run migrations from a machine with the dev shell, pointed at
-the production database (Postgres is published on port 5432 of the host):
+The backend image includes Alembic, and the container's command (in
+`flake.nix`) runs `alembic -c /app/app/alembic.ini upgrade head` before it
+starts `uvicorn`. Deploying new code therefore applies its migrations. If a
+migration fails, `uvicorn` doesn't start; check the container's logs.
+
+To migrate by hand, use a machine with the dev shell, pointed at the production
+database (Postgres is published on port 5432 of the host):
 
 ```sh
 nix-shell
@@ -187,17 +215,14 @@ export DB_HOST=<server> DB_PASS=<password>
 cd backend/app && alembic upgrade head
 ```
 
-Migrate before restarting the backend with code that depends on the new
-schema. A planned improvement is to add `alembic` to the image and run
-`alembic upgrade head` before `uvicorn` starts.
-
 ## Background data collection
 
 Data collection runs inside the FastAPI process as long-lived asyncio tasks.
 They start when the app starts and are cancelled when it shuts down, using
 FastAPI's `lifespan` hook in `main.py`. FastAPI's `BackgroundTasks` isn't
 suitable, because it only runs work after a single request finishes, not on a
-schedule. Set `ENABLE_COLLECTORS=0` to run the API without them.
+schedule. Set `ENABLE_COLLECTORS=0` to run the API without them; that disables
+the indicator engine too.
 
 - `core/lifecycle.py`: `LifecycleTask`, the base for anything that runs for the
   life of the app. Subclasses implement `run()`, and `start()`/`stop()` manage
@@ -206,7 +231,8 @@ schedule. Set `ENABLE_COLLECTORS=0` to run the API without them.
   `name` and `interval` (seconds) and implement `collect(db)`. Each run gets
   its own `AsyncSession`. A failed run is logged and retried on the next
   interval; it never takes down the app.
-- `main.py`: `build_tasks()` lists the tasks to start.
+- `main.py`: `build_tasks()` lists the tasks to start: `RSWikiPriceData` and
+  `IndicatorEngine`.
 
 ### Collectors
 
@@ -224,7 +250,10 @@ primary key `(id, jagex_timestamp)`. Each row carries the dump's
 `%UPDATE_DETECTED%` (when the wiki noticed the update) as `update_detected`,
 both stored as UTC `timestamptz`. The collector skips a dump whose Jagex
 timestamp isn't newer than the latest one stored, so rows are never
-overwritten. Build time series on `jagex_timestamp`:
+overwritten. Items missing any of `id`, `name`, `examine`, `members` or `icon`
+are skipped with a warning. Untraded items have no `price`, `last` or
+`volume`, and those columns are NULL. After a successful insert the collector
+sets `core.events.price_data_updated`, which wakes the indicator engine. Build time series on `jagex_timestamp`:
 
 ```sql
 SELECT jagex_timestamp, price, volume
@@ -256,3 +285,59 @@ Guidelines for collectors:
 - **Don't block the event loop.** Use an async HTTP client such as `httpx.AsyncClient`, or wrap the existing `requests` calls in `asyncio.to_thread`.
 - **Make writes idempotent.** Use Postgres upserts (`sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_update(...)`) so re-running a collection doesn't create duplicates.
 - **Run a single worker.** Each uvicorn worker would start its own copy of the collectors. Before scaling to multiple workers, move collection into its own process or add a lock.
+
+## Indicator engine
+
+`services/indicators/engine.py` holds `IndicatorEngine(LifecycleTask)`. It
+appends one `item_indicators` row per priced item for every Jagex update in
+`price_data`. The rationale for each indicator is in
+[`docs/indicators.md`](../docs/indicators.md).
+
+**When it runs**
+- On startup, and whenever the collector sets `price_data_updated`.
+- Every hour (`fallback_interval`) in case a signal is missed.
+
+**Each run (`process_pending`)**
+1. Finds every `jagex_timestamp` in `price_data` newer than the latest one in
+   `item_indicators`.
+2. Processes those updates oldest first. A first deploy backfills the whole
+   history.
+3. For each update, loads each item's latest priced points (up to the
+   largest indicator `window`, at most 30) with one `ROW_NUMBER()` query, and
+   each item's previous indicator row.
+4. Calls every indicator in `INDICATORS` and inserts the rows in chunks with
+   `ON CONFLICT DO NOTHING`, so re-running an update is harmless.
+
+Untraded items (NULL `price`) get no row for that update and don't count as a
+sample. A failed run is logged and retried on the next signal or after the
+fallback interval.
+
+**`item_indicators`**
+- Primary key `(id, jagex_timestamp)`, with a foreign key to `price_data` that
+  cascades on delete.
+- `samples` counts the item's priced updates so far, including this one.
+
+| Columns | Module | Needs |
+| --- | --- | --- |
+| `ema_5`, `ema_20`, `ema_200`, `env_upper`, `env_lower` | `ema.py` | From the first update; EMA-*n* is reliable once `samples >= n`. The envelope is EMA-5 ± 2%. |
+| `rsi_14` (+ internal `rsi_avg_gain`, `rsi_avg_loss`) | `rsi.py` | 15 updates, then Wilder smoothing from the previous row |
+| `stoch_k`, `stoch_d` | `stochastic.py` | 14 updates for %K and 16 for %D; NULL while the range is flat |
+| `vwap_20`, `vwap_dev_pct` | `vwap.py` | 20 updates with some volume |
+| `vp_poc`, `vp_vah`, `vp_val` | `volume_profile.py` | 30 updates with some volume |
+| `rel_volume` | `relative_volume.py` | 21 updates (this one plus the 20 before) |
+
+Until an indicator has the history it needs, its columns are NULL.
+
+### Adding an indicator
+
+1. Create `services/indicators/<name>.py` with an `Indicator` subclass. Set
+   `window` to the number of points it needs, including the current one.
+   Implement `compute(points, prev)`. `points` holds the item's latest priced
+   `Point(jagex_timestamp, price, volume)`s, oldest first, and `prev` is its
+   previous row as a dict, or `None`. Return a dict of column values. Keep it
+   pure: no database access.
+2. Add an instance to `INDICATORS` in `engine.py`.
+3. Add the columns to `ItemIndicatorsModel` and `IndicatorSchema`, and write a
+   migration that adds them as nullable. Rows computed earlier keep NULLs, so
+   an indicator that carries state must reseed when `prev` lacks it.
+4. Add `tests/test_indicators_<name>.py`.

@@ -4,9 +4,11 @@
 > None has been backtested against real GE data yet. Treat every signal and
 > threshold below as a hypothesis.
 
-The indicators need per-item price and volume history at several resolutions,
-which is what the planned background collectors will gather (see
-[`backend/ReadME.md`](../backend/ReadME.md#background-data-collection-planned)).
+The notes below assume per-item price and volume history at several
+resolutions (5-minute up to daily). Today the backend has only the GE price
+dump, one point per Jagex update (about daily). See
+[What is implemented](#what-is-implemented) for how the indicators are adapted
+to that.
 
 ## Indicators
 
@@ -74,3 +76,42 @@ The original notes assumed a 1% tax. The GE tax went up to **2%** in May 2025.
 Items that sell for under 50 gp are exempt, and the tax per item is capped at
 5M gp. Check the current rules on the wiki before relying on these numbers in
 margin calculations.
+
+## What is implemented
+
+The backend's indicator engine (see
+[`backend/ReadME.md`](../backend/ReadME.md#indicator-engine)) computes these
+for every priced item after each Jagex update. Results go in the
+`item_indicators` table and are served by `GET /api/v1/items/{id}/indicators`.
+
+| Indicator above | Implemented as | Parameters |
+| --- | --- | --- |
+| 1. Volume profile | `vp_poc`, `vp_vah`, `vp_val` | Last 30 updates, 24 price buckets, 70% value area |
+| 2. EMA / envelopes | `ema_5`, `ema_20`, `ema_200`, `env_upper`, `env_lower` | Envelope ±2% around EMA-5 |
+| 3. RSI / stochastic | `rsi_14`; `stoch_k`, `stoch_d` | Wilder RSI(14); %K(14), %D(3) |
+| 4. VWAP | `vwap_20`, `vwap_dev_pct` | Last 20 updates |
+| Volume checks (combinations A/B) | `rel_volume` | This update's volume ÷ the mean of the previous 20 |
+
+### Differences from the notes
+
+- **Timeframe.** Every period counts Jagex updates, not minutes. EMA-5 is
+  about a 5-day average, and EMA-200 needs about 200 updates (roughly 7
+  months) of history. The 5–15 minute strategy in combination A needs the
+  wiki's `/5m` data, which isn't collected yet.
+- **No high/low.** The dump has one price per update, so the stochastic
+  oscillator uses the range of recent prices instead of high/low bars.
+- **Volume is daily.** `volume` is the dump's traded volume for the day, so
+  VWAP and the volume profile are weighted by daily volume.
+- **Volume profile summary only.** The engine stores the point of control and
+  the value-area high/low. It doesn't store the full histogram or label
+  high/low-volume nodes.
+- **Warm-up.** Each indicator is NULL until the item has enough priced updates
+  (the `samples` column counts them).
+
+### Not built yet
+
+- Buy/sell signals and the combinations above. The engine stores indicator
+  values only.
+- The margin check with GE tax. It needs separate instant-buy and instant-sell
+  prices, from the wiki's `/latest` endpoint.
+- Screening across items (for example "every item with RSI below 25").
