@@ -112,6 +112,24 @@ SQLite doesn't support some Postgres-only code, and it drops timezones from
 Check migrations and Postgres behaviour against a real database with
 `alembic upgrade head`.
 
+### Continuous integration
+
+GitHub Actions runs three workflows on every push and pull request:
+
+| Workflow | File | Fails when |
+| --- | --- | --- |
+| Black | `.github/workflows/black.yml` | Any Python file isn't formatted with black 26.5.1 (`black --check .` from the repo root) |
+| Coverage | `.github/workflows/coverage.yml` | Line coverage of `app/` is below 80% |
+| Unit tests | `.github/workflows/tests.yml` | Any test fails |
+
+CI uses Python 3.14 and installs `requirements-dev.txt` with pip instead of the
+Nix shell. When you change a dependency in `shell.nix`, update its pin there
+too.
+
+GitHub can't block a commit. To stop failing changes from reaching `main`,
+mark the workflows as required status checks in the repository's branch
+protection settings.
+
 ## Database access
 
 Routes get a session from the `get_db` dependency. It opens one

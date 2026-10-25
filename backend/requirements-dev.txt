@@ -1,0 +1,12 @@
+# Packages the backend test suite needs, for CI (locally, use the Nix dev shell).
+# Versions match shell.nix's nixpkgs so CI and local runs agree.
+fastapi==0.141.1
+sqlalchemy==2.0.51
+asyncpg==0.31.0
+pydantic==2.13.4
+requests==2.34.2
+pytest==9.1.1
+pytest-asyncio==1.4.0
+pytest-cov==7.1.0
+httpx==0.28.1
+aiosqlite==0.21.0
