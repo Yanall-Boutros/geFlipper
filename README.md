@@ -186,8 +186,7 @@ because they show the wiki API payload shapes.
 
 - [x] Daily GE price collector (Weird Gloop `os_dump.json`)
 - [x] Unit tests for the backend
-- [ ] Background collectors for the wiki price endpoints (`/latest`, `/5m`, `/1h`, `/timeseries`)
 - [x] API endpoints for querying single items and price history (`/items/{id}`, `/items/{id}/history`)
 - [x] Indicators for every tracked item (see [`docs/indicators.md`](docs/indicators.md))
-- [ ] Work out how much of an item to buy, how long to hold it, and when to buy and sell
 - [x] Run migrations automatically on deploy ( currently migrates via [`flake.nix`](flake.nix) )
+- [ ] Work out how much of an item to buy, how long to hold it, and when to buy and sell
